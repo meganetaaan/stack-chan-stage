@@ -1,0 +1,50 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "useDefineForClassFields": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "baseUrl": ".",
+    "paths": {
+      "@stackchan-stage/domain": ["packages/domain/src/index.ts"],
+      "@stackchan-stage/application": ["packages/application/src/index.ts"],
+      "@stackchan-stage/protocol": ["packages/protocol/src/index.ts"],
+      "@stackchan-stage/actor-wasm": [
+        "packages/adapters/actor-wasm/src/index.ts"
+      ],
+      "@stackchan-stage/actor-device": [
+        "packages/adapters/actor-device/src/index.ts"
+      ],
+      "@stackchan-stage/stage-browser": [
+        "packages/adapters/stage-browser/src/index.ts"
+      ],
+      "@stackchan-stage/tts": ["packages/adapters/tts/src/index.ts"],
+      "@stackchan-stage/persistence-browser": [
+        "packages/adapters/persistence-browser/src/index.ts"
+      ],
+      "@stackchan-stage/webmcp": ["packages/adapters/webmcp/src/index.ts"]
+    }
+  },
+  "include": [
+    "apps",
+    "packages",
+    "firmware",
+    "tests",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ]
+}
