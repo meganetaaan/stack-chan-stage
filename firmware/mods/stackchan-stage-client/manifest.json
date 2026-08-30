@@ -7,6 +7,9 @@
   "modules": {
     "*": "./mod"
   },
+  "config": {
+    "stageConfigVersion": 1
+  },
   "platforms": {
     "wasm": {
       "modules": {

@@ -1,4 +1,5 @@
 import { emotionFromName } from "face-state";
+import archiveConfig from "mod/config";
 import { createStageClientCore } from "stage-client-core";
 import { createStageRuntimeEnvironment } from "stage-runtime-environment";
 import Timer from "timer";
@@ -166,8 +167,9 @@ const createCueApplication = (robot, media) => async (command, lifecycle) => {
   }
 };
 
-export function onContextCreated(robot, option = {}) {
-  const supplied = option.stage ?? globalThis.stackchanStage ?? {};
+export function onContextCreated(robot) {
+  const supplied =
+    globalThis.stackchanStage ?? archiveConfig.stage ?? archiveConfig;
   const config = {
     ...supplied,
     capabilities: supplied.capabilities ?? defaultCapabilities,

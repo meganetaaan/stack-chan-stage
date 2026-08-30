@@ -10,7 +10,10 @@
   ],
   "scripts": {
     "build": "npm run typecheck && npm run build --workspace=@stackchan-stage/gateway && npm run build --workspace=@stackchan-stage/web",
-    "check": "npm run format:check && npm run typecheck && npm test && npm run build",
+    "build:stage-mod": "node scripts/build-stage-mod.mjs",
+    "build:stage-wasm-host": "node scripts/build-stage-wasm-host.mjs",
+    "check": "npm run format:check && npm run typecheck && npm test && npm run check:simulator-assets && npm run build",
+    "check:simulator-assets": "node scripts/verify-simulator-assets.mjs",
     "dev": "concurrently -n gateway,web -c yellow,cyan \"npm run dev --workspace=@stackchan-stage/gateway\" \"npm run dev --workspace=@stackchan-stage/web\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

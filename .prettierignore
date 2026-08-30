@@ -1,8 +1,3 @@
-node_modules/
-dist/
-coverage/
-playwright-report/
-test-results/
+apps/web/public/simulator/
+vendor/stack-chan-simulator/
 stack-chan-stage-overview-design.md
-vendor/
-
