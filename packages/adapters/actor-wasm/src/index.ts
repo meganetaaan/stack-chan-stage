@@ -11,6 +11,7 @@ import {
   type ActorId,
   type CueExecutionId,
 } from "@stackchan-stage/domain";
+import { z } from "zod";
 
 export type StageCommand = Readonly<{
   type: "cue.execute" | "cue.cancel";
@@ -34,18 +35,27 @@ export type StageCommand = Readonly<{
   }>;
 }>;
 
-export type StageEvent = Readonly<{
-  type: "cue.accepted" | "cue.started" | "cue.completed" | "cue.failed";
-  protocolVersion: 1;
-  sessionId: string;
-  runId: string;
-  cueExecutionId: string;
-  actorId: string;
-  duplicate?: boolean;
-  code?: string;
-  message?: string;
-  retryable?: boolean;
-}>;
+const stageEventSchema = z
+  .object({
+    type: z.enum([
+      "cue.accepted",
+      "cue.started",
+      "cue.completed",
+      "cue.failed",
+    ]),
+    protocolVersion: z.literal(1),
+    sessionId: z.string().min(1),
+    runId: z.string().min(1),
+    cueExecutionId: z.string().min(1),
+    actorId: z.string().min(1),
+    duplicate: z.boolean().optional(),
+    code: z.string().min(1).optional(),
+    message: z.string().min(1).optional(),
+    retryable: z.boolean().optional(),
+  })
+  .strict();
+
+export type StageEvent = Readonly<z.output<typeof stageEventSchema>>;
 
 export type PreparedAudioPlayback = (
   audio: PreparedAudio,
@@ -55,7 +65,7 @@ export type PreparedAudioPlayback = (
 export type HostStageBridge = Readonly<{
   subscribeCommand: (listener: (command: StageCommand) => void) => () => void;
   dispatchCommand: (command: StageCommand) => void;
-  emitEvent: (event: StageEvent) => void;
+  emitEvent: (event: unknown) => void;
   subscribeEvent: (listener: (event: StageEvent) => void) => () => void;
   registerAudio: (streamId: string, audio: PreparedAudio) => void;
   playAudio: (streamId: string, onStarted?: () => void) => Promise<void>;
@@ -86,7 +96,12 @@ export const createHostStageBridge = (
       for (const listener of commandListeners) listener(command);
     },
     emitEvent(event) {
-      for (const listener of eventListeners) listener(event);
+      const parsed = stageEventSchema.safeParse(event);
+      if (!parsed.success)
+        throw new TypeError(
+          `Host.Stage event is invalid: ${z.prettifyError(parsed.error)}`,
+        );
+      for (const listener of eventListeners) listener(parsed.data);
     },
     subscribeEvent(listener) {
       eventListeners.add(listener);
@@ -179,6 +194,21 @@ const DEFAULT_AUDIO_FORMAT = {
   channels: 1 as const,
   frameDurationMs: 20,
 };
+
+const preparedWasmProviderDataSchema = z
+  .object({
+    format: z
+      .object({
+        codec: z.literal(DEFAULT_AUDIO_FORMAT.codec),
+        sampleRate: z.literal(DEFAULT_AUDIO_FORMAT.sampleRate),
+        channels: z.literal(DEFAULT_AUDIO_FORMAT.channels),
+        frameDurationMs: z.literal(DEFAULT_AUDIO_FORMAT.frameDurationMs),
+      })
+      .strict()
+      .optional(),
+    packets: z.array(z.instanceof(Uint8Array)).optional(),
+  })
+  .loose();
 
 export const DEFAULT_WASM_ACTOR: Actor = Object.freeze({
   id: asActorId("wasm-actor"),
@@ -278,12 +308,16 @@ export const createWasmActorAdapter = ({
           );
         const streamId = `wasm:${command.cueExecutionId}`;
         bridge.registerAudio(streamId, prepared);
-        const provider = prepared.providerData as
-          | {
-              format?: typeof DEFAULT_AUDIO_FORMAT;
-              packets?: readonly Uint8Array[];
-            }
-          | undefined;
+        const providerResult = preparedWasmProviderDataSchema.safeParse(
+          prepared.providerData,
+        );
+        if (prepared.providerData !== undefined && !providerResult.success)
+          throw new TypeError(
+            `Prepared audio metadata is invalid: ${z.prettifyError(providerResult.error)}`,
+          );
+        const provider = providerResult.success
+          ? providerResult.data
+          : undefined;
         audio = {
           streamId,
           fingerprint: prepared.fingerprint,

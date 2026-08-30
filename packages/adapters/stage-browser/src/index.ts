@@ -173,6 +173,7 @@ export const createBrowserStagePort = ({
       backgroundPosition: "center",
       backgroundRepeat: "no-repeat",
       backgroundSize: "cover",
+      zIndex: "0",
       willChange: "opacity, transform",
     });
     root.append(next);

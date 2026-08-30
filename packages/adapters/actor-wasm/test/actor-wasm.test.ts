@@ -10,6 +10,15 @@ import {
 import { createHostStageBridge, createWasmActorAdapter } from "../src";
 
 describe("WASM Actor adapter", () => {
+  it("Host.Stage境界で不正なeventを拒否する", () => {
+    const bridge = createHostStageBridge(vi.fn(async () => {}));
+
+    expect(() =>
+      bridge.emitEvent({ type: "cue.completed", protocolVersion: 1 }),
+    ).toThrow("Host.Stage event is invalid");
+    bridge.dispose();
+  });
+
   it("Host.Stage command/event bridgeをActorPortへ正規化する", async () => {
     const playback = vi.fn(async (_audio, options) => options.onStarted?.());
     const bridge = createHostStageBridge(playback);

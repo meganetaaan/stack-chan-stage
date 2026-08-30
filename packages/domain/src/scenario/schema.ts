@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  asActorId,
   asAssetId,
   asCueId,
   asLaneId,
@@ -9,11 +10,12 @@ import {
   asSceneId,
   type ValidationIssue,
 } from "../shared";
-import type { Cue, Scenario } from "./types";
+import type { CastPlan, Cue, Scenario } from "./types";
 
 const nonEmpty = z.string().trim().min(1);
 const duration = z.number().int().nonnegative().max(3_600_000);
 const roleId = nonEmpty.transform(asRoleId);
+const actorId = nonEmpty.transform(asActorId);
 const assetId = nonEmpty.transform(asAssetId);
 const cueBase = { id: nonEmpty.transform(asCueId), label: nonEmpty.optional() };
 
@@ -191,6 +193,20 @@ export const scenarioSchema: z.ZodType<Scenario> = z
         })
         .strict(),
     ),
+  })
+  .strict();
+
+export const castScopeSchema = z
+  .object({
+    assignments: z.record(z.string(), actorId),
+    standInActorId: actorId.optional(),
+  })
+  .strict();
+
+export const castPlanSchema: z.ZodType<CastPlan> = z
+  .object({
+    global: castScopeSchema,
+    scenes: z.record(z.string(), castScopeSchema),
   })
   .strict();
 

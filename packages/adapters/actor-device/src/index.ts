@@ -10,6 +10,7 @@ import {
   type CueExecutionId,
 } from "@stackchan-stage/domain";
 import {
+  MAX_OPUS_PACKET_BYTES,
   decodeControlMessage,
   decodeMediaMessage,
   encodeControlMessage,
@@ -17,6 +18,7 @@ import {
   type ControlMessage,
   type MediaMessage,
 } from "@stackchan-stage/protocol";
+import { z } from "zod";
 
 export type WebSocketLike = Readonly<{
   getReadyState: () => number;
@@ -118,37 +120,31 @@ const socketUrl = (
   return url.toString();
 };
 
-type OpusProviderData = Readonly<{
-  kind: "opus-packets";
-  format: Readonly<{
-    codec: "opus";
-    sampleRate: number;
-    channels: 1;
-    frameDurationMs: number;
-  }>;
-  packets: readonly Uint8Array[];
-}>;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
-const isOpusProviderData = (value: unknown): value is OpusProviderData => {
-  if (!isRecord(value) || value.kind !== "opus-packets") return false;
-  if (
-    !Array.isArray(value.packets) ||
-    value.packets.length === 0 ||
-    !value.packets.every((packet) => packet instanceof Uint8Array)
-  )
-    return false;
-  const format = value.format;
-  return (
-    isRecord(format) &&
-    format.codec === "opus" &&
-    typeof format.sampleRate === "number" &&
-    format.channels === 1 &&
-    typeof format.frameDurationMs === "number"
-  );
-};
+const opusProviderDataSchema = z
+  .object({
+    kind: z.literal("opus-packets"),
+    format: z
+      .object({
+        codec: z.literal("opus"),
+        sampleRate: z.number().int().positive().max(96_000),
+        channels: z.literal(1),
+        frameDurationMs: z.number().int().positive().max(120),
+      })
+      .strict(),
+    packets: z
+      .array(
+        z
+          .instanceof(Uint8Array)
+          .refine(
+            (packet) =>
+              packet.byteLength > 0 &&
+              packet.byteLength <= MAX_OPUS_PACKET_BYTES,
+            `Opus packet must contain between 1 and ${MAX_OPUS_PACKET_BYTES} bytes`,
+          ),
+      )
+      .min(1),
+  })
+  .loose();
 
 type ActiveMedia = {
   actorId: ActorId;
@@ -434,9 +430,16 @@ export const createDeviceActorAdapter = ({
       if (activeMedia)
         throw new Error("Another physical speech stream is active");
       const prepared = await resolveAudio(command.speech.fingerprint);
-      const provider = prepared?.providerData;
-      if (!prepared || !isOpusProviderData(provider))
+      if (!prepared)
         throw new Error("Physical Actor speech requires prepared Opus packets");
+      const providerResult = opusProviderDataSchema.safeParse(
+        prepared.providerData,
+      );
+      if (!providerResult.success)
+        throw new TypeError(
+          `Physical Actor speech metadata is invalid: ${z.prettifyError(providerResult.error)}`,
+        );
+      const provider = providerResult.data;
       const streamId = `device:${command.cueExecutionId}`;
       activeMedia = {
         actorId: command.actorId,

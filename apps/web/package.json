@@ -1,0 +1,29 @@
+{
+  "name": "@stackchan-stage/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --host 127.0.0.1",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@stackchan-stage/actor-device": "0.1.0",
+    "@stackchan-stage/actor-wasm": "0.1.0",
+    "@stackchan-stage/application": "0.1.0",
+    "@stackchan-stage/domain": "0.1.0",
+    "@stackchan-stage/persistence-browser": "0.1.0",
+    "@stackchan-stage/stage-browser": "0.1.0",
+    "@stackchan-stage/tts": "0.1.0",
+    "@stackchan-stage/webmcp": "0.1.0",
+    "lucide-react": "^0.542.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.2",
+    "vite": "^7.1.3"
+  }
+}
