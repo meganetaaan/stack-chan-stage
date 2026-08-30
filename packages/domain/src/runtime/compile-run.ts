@@ -4,6 +4,7 @@ import {
   asCueExecutionId,
   asRunId,
   issue,
+  ownRecordValue,
   type ValidationIssue,
 } from "../shared";
 import { createAudioFingerprint } from "../assets/fingerprint";
@@ -129,7 +130,9 @@ export const compileRun = (input: CompileRunInput): CompileRunResult => {
         `${runId}:${scene.id}:${cue.id}:${cueIndex}`,
       );
       const roleId = "roleId" in cue ? cue.roleId : undefined;
-      const actorId = roleId ? cast.assignments[roleId] : undefined;
+      const actorId = roleId
+        ? ownRecordValue(cast.assignments, roleId)
+        : undefined;
       const actor = actorId ? actorById.get(actorId) : undefined;
 
       if (roleId && !actorId) {

@@ -11,23 +11,23 @@ import type {
 export type VoiceProfileRef = Readonly<{
   provider: string;
   voiceId: string;
-  model?: string;
-  locale?: string;
+  model?: string | undefined;
+  locale?: string | undefined;
 }>;
 
 export type Role = Readonly<{
   id: RoleId;
   name: string;
-  description?: string;
-  voice?: VoiceProfileRef;
+  description?: string | undefined;
+  voice?: VoiceProfileRef | undefined;
 }>;
 
 export type SpeechCue = Readonly<{
   kind: "speech";
   roleId: RoleId;
   text: string;
-  direction?: string;
-  voiceOverride?: VoiceProfileRef;
+  direction?: string | undefined;
+  voiceOverride?: VoiceProfileRef | undefined;
 }>;
 
 export type ExpressionCue = Readonly<{
@@ -45,7 +45,7 @@ export type MotionCue = Readonly<{
         kind: "pose";
         yaw: number;
         pitch: number;
-        roll?: number;
+        roll?: number | undefined;
         durationMs: number;
       }>;
 }>;
@@ -61,7 +61,7 @@ export type LightingPlayCue = Readonly<{
   kind: "lighting.play";
   roleId: RoleId;
   effect: string;
-  parameters?: Readonly<Record<string, string | number | boolean>>;
+  parameters?: Readonly<Record<string, string | number | boolean>> | undefined;
 }>;
 
 export type BackdropCue = Readonly<{
@@ -96,7 +96,7 @@ export type PauseCue = Readonly<{
 }>;
 
 export type Cue = Readonly<
-  { id: CueId; label?: string } & (
+  { id: CueId; label?: string | undefined } & (
     | SpeechCue
     | ExpressionCue
     | MotionCue
@@ -130,8 +130,8 @@ export type AssetMetadata = Readonly<{
   mimeType: string;
   byteSize: number;
   digest: string;
-  sourceUrl?: string;
-  license?: string;
+  sourceUrl?: string | undefined;
+  license?: string | undefined;
 }>;
 
 export type Scenario = Readonly<{
@@ -145,7 +145,7 @@ export type Scenario = Readonly<{
 
 export type CastScope = Readonly<{
   assignments: Readonly<Partial<Record<string, ActorId>>>;
-  standInActorId?: ActorId;
+  standInActorId?: ActorId | undefined;
 }>;
 
 export type CastPlan = Readonly<{

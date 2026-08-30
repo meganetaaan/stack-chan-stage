@@ -7,6 +7,7 @@ import {
   deleteScene,
   importAssetMetadata,
   moveCue,
+  ownRecordValue,
   updateCue,
   updateRole,
   updateScene,
@@ -307,10 +308,10 @@ export const actorAssignedTo = (
   roleId: RoleId,
   sceneId?: SceneId,
 ): ActorId | undefined => {
-  const scene = sceneId ? plan.scenes[sceneId] : undefined;
+  const scene = sceneId ? ownRecordValue(plan.scenes, sceneId) : undefined;
   return (
-    scene?.assignments[roleId] ??
-    plan.global.assignments[roleId] ??
+    (scene ? ownRecordValue(scene.assignments, roleId) : undefined) ??
+    ownRecordValue(plan.global.assignments, roleId) ??
     scene?.standInActorId ??
     plan.global.standInActorId
   );

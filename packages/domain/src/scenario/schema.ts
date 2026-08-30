@@ -143,7 +143,15 @@ export const cueSchema: z.ZodType<Cue> = z.discriminatedUnion("kind", [
   musicStartCueSchema,
   musicStopCueSchema,
   pauseCueSchema,
-]) as z.ZodType<Cue>;
+]);
+
+const laneSchema = z
+  .object({
+    id: nonEmpty.transform(asLaneId),
+    name: nonEmpty,
+    cues: z.array(cueSchema),
+  })
+  .strict();
 
 export const scenarioSchema: z.ZodType<Scenario> = z
   .object({
@@ -165,17 +173,7 @@ export const scenarioSchema: z.ZodType<Scenario> = z
         .object({
           id: nonEmpty.transform(asSceneId),
           title: nonEmpty,
-          lanes: z
-            .array(
-              z
-                .object({
-                  id: nonEmpty.transform(asLaneId),
-                  name: nonEmpty,
-                  cues: z.array(cueSchema),
-                })
-                .strict(),
-            )
-            .nonempty(),
+          lanes: z.tuple([laneSchema]).rest(laneSchema),
         })
         .strict(),
     ),
@@ -194,7 +192,7 @@ export const scenarioSchema: z.ZodType<Scenario> = z
         .strict(),
     ),
   })
-  .strict() as unknown as z.ZodType<Scenario>;
+  .strict();
 
 export type ParseScenarioResult =
   | Readonly<{ ok: true; scenario: Scenario }>

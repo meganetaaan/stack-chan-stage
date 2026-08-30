@@ -21,6 +21,11 @@ export const asRunId = (value: string): RunId => value as RunId;
 export const asCueExecutionId = (value: string): CueExecutionId =>
   value as CueExecutionId;
 
+export const ownRecordValue = <T>(
+  record: Readonly<Partial<Record<string, T>>>,
+  key: string,
+): T | undefined => (Object.hasOwn(record, key) ? record[key] : undefined);
+
 export const canonicalJson = (value: unknown): string => {
   const visit = (entry: unknown): unknown => {
     if (Array.isArray(entry)) return entry.map(visit);

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   asActorId,
   asRoleId,
+  asSceneId,
   resolveSceneCast,
   validateCueForActor,
   type CastPlan,
@@ -49,6 +50,23 @@ describe("Cast resolution", () => {
     expect(
       result.ok && new Set(Object.values(result.cast.assignments)),
     ).toEqual(new Set([actorId]));
+  });
+
+  it("Object prototypeと同名のIDを配役として誤認しない", () => {
+    const scene = {
+      ...scenarioFixture().scenes[0]!,
+      id: asSceneId("constructor"),
+    };
+    const result = resolveSceneCast(
+      scene,
+      [{ id: asRoleId("valueOf"), name: "prototype role" }],
+      { global: { assignments: {} }, scenes: {} },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      issues: [{ code: "cast.unresolved_role" }],
+    });
   });
 
   it("任意のCastPlanで各Roleの解決先は0または1 Actorになる", () => {

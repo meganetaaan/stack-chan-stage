@@ -1,4 +1,9 @@
-import { issue, type ValidationIssue } from "../shared";
+import {
+  issue,
+  ownRecordValue,
+  type ActorId,
+  type ValidationIssue,
+} from "../shared";
 import type { CastPlan, Role, Scene } from "../scenario/types";
 import type { ResolvedSceneCast } from "./types";
 
@@ -11,18 +16,17 @@ export const resolveSceneCast = (
   roles: readonly Role[],
   plan: CastPlan,
 ): ResolveCastResult => {
-  const scope = plan.scenes[scene.id];
-  const assignments: Record<string, (typeof plan.global.assignments)[string]> =
-    {};
+  const scope = ownRecordValue(plan.scenes, scene.id);
+  const assignments: Array<readonly [string, ActorId]> = [];
   const issues: ValidationIssue[] = [];
 
   for (const role of roles) {
     const actorId =
-      scope?.assignments[role.id] ??
-      plan.global.assignments[role.id] ??
+      (scope ? ownRecordValue(scope.assignments, role.id) : undefined) ??
+      ownRecordValue(plan.global.assignments, role.id) ??
       scope?.standInActorId ??
       plan.global.standInActorId;
-    if (actorId) assignments[role.id] = actorId;
+    if (actorId) assignments.push([role.id, actorId]);
     else
       issues.push(
         issue(
@@ -37,6 +41,9 @@ export const resolveSceneCast = (
     ? { ok: false, issues }
     : {
         ok: true,
-        cast: { sceneId: scene.id, assignments } as ResolvedSceneCast,
+        cast: {
+          sceneId: scene.id,
+          assignments: Object.fromEntries(assignments),
+        },
       };
 };
