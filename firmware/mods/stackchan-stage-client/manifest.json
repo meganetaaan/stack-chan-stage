@@ -1,0 +1,23 @@
+{
+  "include": [
+    "$(MODDABLE)/examples/manifest_mod.json",
+    "../../modules/stage-client-core/manifest.json",
+    "../../modules/stage-wasm-transport/manifest.json"
+  ],
+  "modules": {
+    "*": "./mod"
+  },
+  "platforms": {
+    "wasm": {
+      "modules": {
+        "stage-runtime-environment": "./stage-runtime-wasm"
+      }
+    },
+    "esp32/m5stackchan_cores3": {
+      "include": ["../../modules/stage-control-transport/manifest.json"],
+      "modules": {
+        "stage-runtime-environment": "./stage-runtime-device"
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "modules": {
+    "stage-client-core": "./stage-client-core"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "audio.open",
+  "protocolVersion": 1,
+  "sessionId": "session-fixture",
+  "actorId": "device-fixture",
+  "streamId": "stream-fixture",
+  "cueExecutionId": "execution-fixture",
+  "format": {
+    "codec": "opus",
+    "sampleRate": 24000,
+    "channels": 1,
+    "frameDurationMs": 20
+  },
+  "packetCount": 8
+}

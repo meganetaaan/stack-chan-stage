@@ -1,0 +1,16 @@
+{
+  "name": "@stackchan-stage/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/index.js --external:ws",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@stackchan-stage/domain": "0.1.0",
+    "@stackchan-stage/protocol": "0.1.0",
+    "ws": "^8.18.3"
+  }
+}

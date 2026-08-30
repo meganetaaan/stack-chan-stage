@@ -1,0 +1,7 @@
+{
+  "modules": {
+    "stage-control-transport": "./stage-control-transport",
+    "stage-media-receiver": "./stage-media-receiver",
+    "stage-opus-player": "./stage-opus-player"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "type": "actor.hello",
+  "protocolVersion": 1,
+  "sessionId": "session-fixture",
+  "actor": {
+    "id": "device-fixture",
+    "name": "Fixture Stack-chan",
+    "capabilities": {
+      "protocolVersion": 1,
+      "speech": {
+        "formats": [
+          {
+            "codec": "opus",
+            "sampleRate": 24000,
+            "channels": 1,
+            "frameDurationMs": 20
+          }
+        ],
+        "streaming": true,
+        "playbackEndedAck": true
+      },
+      "expressions": ["neutral", "happy", "surprised"],
+      "motion": {
+        "presets": ["nod", "look-around"],
+        "pose": {
+          "axes": ["yaw", "pitch", "roll"],
+          "duration": true
+        }
+      },
+      "lighting": {
+        "setColor": true,
+        "effects": ["pulse", "rainbow"]
+      }
+    }
+  }
+}

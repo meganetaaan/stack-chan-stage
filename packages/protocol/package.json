@@ -1,0 +1,11 @@
+{
+  "name": "@stackchan-stage/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@stackchan-stage/domain": "0.1.0",
+    "zod": "^4.1.5"
+  }
+}

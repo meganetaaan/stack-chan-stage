@@ -1,0 +1,5 @@
+{
+  "modules": {
+    "stage-wasm-transport": "./stage-wasm-transport"
+  }
+}

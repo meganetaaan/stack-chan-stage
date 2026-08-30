@@ -1,0 +1,26 @@
+{
+  "type": "cue.execute",
+  "protocolVersion": 1,
+  "sessionId": "session-fixture",
+  "runId": "run-fixture",
+  "cueExecutionId": "execution-fixture",
+  "actorId": "device-fixture",
+  "cue": {
+    "id": "cue-fixture",
+    "kind": "speech",
+    "roleId": "role-narrator",
+    "text": "こんにちは"
+  },
+  "audio": {
+    "streamId": "stream-fixture",
+    "fingerprint": "4ff0c4f6",
+    "format": {
+      "codec": "opus",
+      "sampleRate": 24000,
+      "channels": 1,
+      "frameDurationMs": 20
+    },
+    "packetCount": 8,
+    "byteLength": 512
+  }
+}
