@@ -1,0 +1,11 @@
+{
+  "name": "@stackchan-stage/persistence-browser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@stackchan-stage/application": "0.1.0",
+    "idb": "^8.0.3"
+  }
+}
