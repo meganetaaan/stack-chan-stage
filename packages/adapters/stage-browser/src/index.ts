@@ -120,7 +120,10 @@ export const createBrowserStagePort = ({
   let backdropObjectUrl: string | undefined;
   let music: MusicNodes | undefined;
 
-  root.style.position ||= "relative";
+  const rootPosition =
+    root.ownerDocument.defaultView?.getComputedStyle(root).position;
+  if (!rootPosition || rootPosition === "static")
+    root.style.position = "relative";
   root.style.overflow = "hidden";
 
   const resolveUrl = async (assetId: AssetId) => {

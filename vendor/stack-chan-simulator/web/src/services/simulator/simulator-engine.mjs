@@ -37,6 +37,7 @@ import {
 import { createModStorage } from '../../../simulator/mod-storage.mjs'
 
 const DRIVER_MAX_ANGULAR_SPEED = 2.4
+const CAMERA_FRAME_PADDING = 1.12
 
 class StackchanScene {
   constructor({ viewport, screen, runtimeBaseUrl }) {
@@ -52,14 +53,13 @@ class StackchanScene {
     this.pointerNdc = new THREE.Vector2()
 
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x10141c)
     this.camera = new THREE.PerspectiveCamera(35, 1, 0.1, 1000)
     this.camera.position.set(42, 28, 155)
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: viewport,
       antialias: true,
-      alpha: false,
+      alpha: true,
     })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 
@@ -160,6 +160,7 @@ class StackchanScene {
         outline.rotation.copy(this.shell.rotation)
         outline.scale.copy(this.shell.scale)
         this.headGroup.add(outline)
+        this.#resize()
       },
       undefined,
       (error) => {
@@ -285,6 +286,19 @@ class StackchanScene {
     this.renderer.setSize(width, height, false)
     this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()
+
+    const bounds = new THREE.Box3().setFromObject(this.root)
+    if (bounds.isEmpty()) return
+    const sphere = bounds.getBoundingSphere(new THREE.Sphere())
+    const verticalFov = THREE.MathUtils.degToRad(this.camera.fov)
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * this.camera.aspect)
+    const framingFov = Math.min(verticalFov, horizontalFov)
+    const distance = (sphere.radius / Math.sin(framingFov / 2)) * CAMERA_FRAME_PADDING
+    const direction = this.camera.position.clone().sub(this.controls.target).normalize()
+    this.controls.target.copy(sphere.center)
+    this.camera.position.copy(sphere.center).addScaledVector(direction, distance)
+    this.controls.maxDistance = Math.max(260, distance * 1.8)
+    this.controls.update()
   }
 
   applyDriverRotation(rotation) {

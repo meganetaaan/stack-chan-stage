@@ -11,6 +11,26 @@ import {
 import { createBrowserStagePort } from "../src";
 
 describe("Browser Stage adapter", () => {
+  it("stylesheetで指定されたStage rootの配置を上書きしない", () => {
+    const style = document.createElement("style");
+    style.textContent = ".positioned-stage-root { position: absolute; }";
+    document.head.append(style);
+    const root = document.createElement("div");
+    root.className = "positioned-stage-root";
+    document.body.append(root);
+
+    const stage = createBrowserStagePort({
+      root,
+      resolveAsset: async () => undefined,
+    });
+
+    expect(getComputedStyle(root).position).toBe("absolute");
+    expect(root.style.position).toBe("");
+    void stage.dispose();
+    root.remove();
+    style.remove();
+  });
+
   it("背景transition終了後に旧layerを破棄する", async () => {
     const root = document.createElement("div");
     const cancel = vi.fn();
