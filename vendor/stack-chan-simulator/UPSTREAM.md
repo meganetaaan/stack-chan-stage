@@ -25,7 +25,7 @@ repository's Stage MOD.
 | --- | --- |
 | `mc.js` | `1f50e6cb39ebdbe10557012726d59b2c7507080289db0f6faed6bded832761ee` |
 | `mc.wasm` | `2cdbba042963a6359aef034ef82c4e2fe6b7c1abf3357c1e47ebc631a763f324` |
-| `stage-client.xsa` | `529dee1be06d5f9a25fbf88ab04c0dbadcf149e74d7380240d8c9ab2c88ec936` |
+| `stage-client.xsa` | `5198e3b1838b81036799b49bc5de78a0dc1fc07373a6a2672094f74fe5e67fad` |
 | `assets/case/v1/shell.stl` | `832ced3ad3669c3fc6b174a984cc800522ca33cecd9222d531bda430f6cc5236` |
 
 The pinned build inputs are:

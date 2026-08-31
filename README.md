@@ -10,6 +10,7 @@ ScenarioとCastから実行時のRunPlanを確定し、Cueの完了イベント�
 - Scene、Role、Cue、Cast、素材をブラウザで編集できます。
 - Scene単位または全場面を、1 Laneの直列Runとして上演できます。
 - WASM Actorは、固定したstack-chan SimulatorとStage MODをブラウザ内で実行します。
+- モーションプリセットから、うなずき、首かしげ、見回しなどの汎用的な身振りと、拍手、考え中のhandスプライト表現を上演できます。
 - 実機Actorは、Local GatewayのControl経路とMedia経路を分離して接続します。
 - WebMCPは、取得、検証、Scene/Cue編集、素材取込、Cast変更、Preview、Play、Stopの15ツールを登録します。
 - Scenario、Cast、素材、生成音声をIndexedDBへ保存します。

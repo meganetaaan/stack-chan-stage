@@ -3,7 +3,11 @@ import { X } from "lucide-react";
 
 import { cueSchema, type Cue, type Scenario } from "@stackchan-stage/domain";
 
-import { CueKindIcon, cueKindLabel } from "./cue-presentation";
+import {
+  CueKindIcon,
+  cueKindLabel,
+  motionPresetOptions,
+} from "./cue-presentation";
 
 type FormState = Readonly<{
   id: string;
@@ -470,15 +474,10 @@ export const CueEditor = ({
                   value={form.motionName}
                   onChange={(event) => update("motionName", event.target.value)}
                 >
-                  {[
-                    "neutral",
-                    "nod",
-                    "shake",
-                    "bow",
-                    "look-left",
-                    "look-right",
-                  ].map((name) => (
-                    <option key={name}>{name}</option>
+                  {motionPresetOptions.map(({ name, label }) => (
+                    <option key={name} value={name}>
+                      {label}
+                    </option>
                   ))}
                 </select>
               </label>

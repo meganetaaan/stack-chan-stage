@@ -15,7 +15,7 @@ const expected = new Map([
   ],
   [
     "apps/web/public/simulator/stage-client.xsa",
-    "529dee1be06d5f9a25fbf88ab04c0dbadcf149e74d7380240d8c9ab2c88ec936",
+    "5198e3b1838b81036799b49bc5de78a0dc1fc07373a6a2672094f74fe5e67fad",
   ],
   [
     "apps/web/public/simulator/assets/case/v1/shell.stl",

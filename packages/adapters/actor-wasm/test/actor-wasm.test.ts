@@ -7,9 +7,28 @@ import {
   asRoleId,
   asRunId,
 } from "@stackchan-stage/domain";
-import { createHostStageBridge, createWasmActorAdapter } from "../src";
+import {
+  createHostStageBridge,
+  createWasmActorAdapter,
+  DEFAULT_WASM_ACTOR,
+} from "../src";
 
 describe("WASM Actor adapter", () => {
+  it("汎用的な10種類のmotion presetを公開する", () => {
+    expect(DEFAULT_WASM_ACTOR.capabilities.motion?.presets).toEqual([
+      "neutral",
+      "nod",
+      "shake",
+      "tilt",
+      "bow",
+      "look-around",
+      "look-left",
+      "look-right",
+      "clap",
+      "thinking",
+    ]);
+  });
+
   it("Host.Stage境界で不正なeventを拒否する", () => {
     const bridge = createHostStageBridge(vi.fn(async () => {}));
 

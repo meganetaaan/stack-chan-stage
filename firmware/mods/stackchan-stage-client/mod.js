@@ -32,7 +32,18 @@ const defaultCapabilities = Object.freeze({
     "HOT",
   ],
   motion: {
-    presets: ["neutral", "nod", "shake", "bow", "look-left", "look-right"],
+    presets: [
+      "neutral",
+      "nod",
+      "shake",
+      "tilt",
+      "bow",
+      "look-around",
+      "look-left",
+      "look-right",
+      "clap",
+      "thinking",
+    ],
     pose: { axes: ["yaw", "pitch", "roll"], duration: true },
   },
   lighting: { setColor: true, effects: ["blink", "pulse", "rainbow"] },
@@ -152,6 +163,7 @@ export function onContextCreated(robot) {
     applyCue: createCueApplication(robot, environment.media),
     cancelCue: async () => {
       await environment.media.abortActive("Cue cancelled");
+      motion.hideHands(robot);
       await motion.setPose(robot, 0, 0, 0, 250);
       robot.lighting.lightOff("head");
     },

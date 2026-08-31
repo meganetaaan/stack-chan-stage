@@ -59,14 +59,22 @@ const expressionLabel: Readonly<Record<string, string>> = {
   HOT: "暑そうな表情",
 };
 
-const motionLabel: Readonly<Record<string, string>> = {
-  neutral: "正面を向く",
-  nod: "うなずく",
-  shake: "首を横に振る",
-  bow: "お辞儀する",
-  "look-left": "左を見る",
-  "look-right": "右を見る",
-};
+export const motionPresetOptions = [
+  { name: "neutral", label: "正面を向く" },
+  { name: "nod", label: "うなずく" },
+  { name: "shake", label: "首を横に振る" },
+  { name: "tilt", label: "首をかしげる" },
+  { name: "bow", label: "お辞儀する" },
+  { name: "look-around", label: "あたりを見回す" },
+  { name: "look-left", label: "左を見る" },
+  { name: "look-right", label: "右を見る" },
+  { name: "clap", label: "拍手する" },
+  { name: "thinking", label: "手を添えて考える" },
+] as const;
+
+const motionLabel = Object.fromEntries(
+  motionPresetOptions.map(({ name, label }) => [name, label]),
+);
 
 const formatDuration = (durationMs: number) =>
   durationMs >= 1_000
