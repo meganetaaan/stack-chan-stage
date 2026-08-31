@@ -49,6 +49,7 @@ export type RunPlan = Readonly<{
 }>;
 
 export type CompileRunInput = Readonly<{
+  runId: RunId;
   scenario: Scenario;
   sceneIds: readonly SceneId[];
   castPlan: import("../scenario/types").CastPlan;

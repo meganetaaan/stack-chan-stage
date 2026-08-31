@@ -7,6 +7,7 @@ import {
   asActorId,
   asCueId,
   asLaneId,
+  asRunId,
   asSceneId,
   compileRun,
   cueSchema,
@@ -15,6 +16,8 @@ import {
 import { z } from "zod";
 
 type JsonSchema = Record<string, unknown>;
+
+type WebMcpExecutionOptions = Readonly<{ signal?: AbortSignal }>;
 
 export type WebMcpTool = Readonly<{
   name: string;
@@ -27,7 +30,7 @@ export type WebMcpTool = Readonly<{
   }>;
   execute: (
     input: Record<string, unknown>,
-    options: Readonly<{ signal: AbortSignal }>,
+    options?: WebMcpExecutionOptions,
   ) => Promise<unknown>;
 }>;
 
@@ -53,6 +56,7 @@ export type PerformanceTools = Readonly<{
       fromCueId?: string;
       toCueId?: string;
       actorId?: string;
+      speechMode?: "audible" | "skip";
     }>,
     signal: AbortSignal,
   ) => Promise<unknown>;
@@ -165,6 +169,7 @@ const schemas = {
       fromCueId: id.optional(),
       toCueId: id.optional(),
       actorId: id.optional(),
+      speechMode: z.enum(["audible", "skip"]).optional(),
     })
     .strict(),
   play: z.object({ sceneIds: z.array(id).min(1).optional() }).strict(),
@@ -205,6 +210,11 @@ const mutationResult = (result: CommandResult) =>
         currentRevision: result.currentRevision,
         validationIssues: result.validationIssues,
       };
+
+const executionSignal = (
+  options: WebMcpExecutionOptions | undefined,
+  fallback: AbortSignal,
+) => options?.signal ?? fallback;
 
 const writeTool = <T extends z.ZodType>(
   definition: Omit<WebMcpTool, "execute" | "inputSchema">,
@@ -283,6 +293,7 @@ export const registerStageWebMcpTools = async ({
         if (!parsed.ok) return parsed.result;
         const workspace = store.getSnapshot();
         const compiled = compileRun({
+          runId: asRunId("run-validation"),
           scenario: workspace.scenario,
           sceneIds: workspace.scenario.scenes.map((scene) => scene.id),
           castPlan: workspace.castPlan,
@@ -424,9 +435,11 @@ export const registerStageWebMcpTools = async ({
       description:
         "CORS取得可能なURLの背景またはBGMを検査し、content-addressed assetとして登録します。",
       inputSchema: jsonSchema(schemas.assetImport),
-      async execute(input, { signal }) {
+      async execute(input, options) {
         const parsed = parse(schemas.assetImport, input);
         if (!parsed.ok) return parsed.result;
+        const signal = executionSignal(options, registration.signal);
+        signal.throwIfAborted();
         const { expectedRevision } = parsed.data;
         const request = {
           url: parsed.data.url,
@@ -468,11 +481,13 @@ export const registerStageWebMcpTools = async ({
     {
       name: "stage.performance.preview",
       title: "上演をプレビュー",
-      description: "選択SceneまたはCue範囲を指定Actorで試演します。",
+      description:
+        "選択SceneまたはCue範囲を指定Actorで試演します。speechMode=skipを明示するとセリフを除外し、warningsとskippedCueIdsを返します。",
       inputSchema: jsonSchema(schemas.preview),
-      async execute(input, { signal }) {
+      async execute(input, options) {
         const parsed = parse(schemas.preview, input);
         if (!parsed.ok) return parsed.result;
+        const signal = executionSignal(options, registration.signal);
         signal.throwIfAborted();
         return performance.preview(
           {
@@ -482,6 +497,9 @@ export const registerStageWebMcpTools = async ({
               : {}),
             ...(parsed.data.toCueId ? { toCueId: parsed.data.toCueId } : {}),
             ...(parsed.data.actorId ? { actorId: parsed.data.actorId } : {}),
+            ...(parsed.data.speechMode
+              ? { speechMode: parsed.data.speechMode }
+              : {}),
           },
           signal,
         );
@@ -492,9 +510,10 @@ export const registerStageWebMcpTools = async ({
       title: "上演を開始",
       description: "Runをcompile、prepareして、選択Sceneを順に上演します。",
       inputSchema: jsonSchema(schemas.play),
-      async execute(input, { signal }) {
+      async execute(input, options) {
         const parsed = parse(schemas.play, input);
         if (!parsed.ok) return parsed.result;
+        const signal = executionSignal(options, registration.signal);
         signal.throwIfAborted();
         return performance.play(
           parsed.data.sceneIds ? { sceneIds: parsed.data.sceneIds } : {},
@@ -507,9 +526,10 @@ export const registerStageWebMcpTools = async ({
       title: "上演を停止",
       description: "実行中Runを停止し、Actorと舞台装置をcleanupします。",
       inputSchema: jsonSchema(schemas.empty),
-      async execute(input, { signal }) {
+      async execute(input, options) {
         const parsed = parse(schemas.empty, input);
         if (!parsed.ok) return parsed.result;
+        const signal = executionSignal(options, registration.signal);
         signal.throwIfAborted();
         return performance.stop(signal);
       },

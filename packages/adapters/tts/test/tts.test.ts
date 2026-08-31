@@ -63,6 +63,36 @@ describe("TTS adapter", () => {
     });
   });
 
+  it("認証tokenをBearer headerで送り、request bodyへ含めない", async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          format: {
+            codec: "opus",
+            sampleRate: 24_000,
+            channels: 1,
+            frameDurationMs: 20,
+          },
+          packets: ["AQID"],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const port = createTtsAudioPreparationPort({
+      endpoint: "https://tts.example.test/v1/speech",
+      authorizationToken: "stage-secret-token",
+      fetchImplementation,
+    });
+
+    await port.prepare(speech);
+
+    const request = fetchImplementation.mock.calls[0]?.[1];
+    expect(request?.headers).toMatchObject({
+      authorization: "Bearer stage-secret-token",
+    });
+    expect(request?.body).not.toContain("stage-secret-token");
+  });
+
   it("HTTP endpointの未検証JSONを受理しない", async () => {
     const port = createTtsAudioPreparationPort({
       endpoint: "https://tts.example.test/v1/speech",

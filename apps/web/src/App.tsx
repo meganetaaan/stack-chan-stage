@@ -7,11 +7,13 @@ import {
   Clapperboard,
   Expand,
   FileAudio,
+  GripVertical,
   Image,
   Layers3,
   Library,
   Link2,
   LoaderCircle,
+  MoreVertical,
   Pencil,
   Play,
   Plus,
@@ -23,7 +25,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   asLaneId,
@@ -38,10 +40,12 @@ import {
 } from "@stackchan-stage/domain";
 
 import type { StageWebApplication } from "./composition/application";
-import { CueDialog } from "./features/editor/CueDialog";
+import { CueEditor } from "./features/editor/CueEditor";
 import {
   CueKindIcon,
   cueKindLabel,
+  cueScriptNote,
+  cueScriptText,
   cueSummary,
 } from "./features/editor/cue-presentation";
 import {
@@ -93,6 +97,130 @@ const IconButton = ({
   >
     {children}
   </button>
+);
+
+const CueActionMenu = ({
+  label,
+  canMoveUp,
+  canMoveDown,
+  onEdit,
+  onMoveUp,
+  onMoveDown,
+  onDelete,
+}: Readonly<{
+  label: string;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onEdit: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDelete: () => void;
+}>) => {
+  const [open, setOpen] = useState(false);
+  const closeAndRun = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+
+  return (
+    <div
+      className="cue-mobile-actions"
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        if (!(next instanceof Node) || !event.currentTarget.contains(next))
+          setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !open) return;
+        event.stopPropagation();
+        setOpen(false);
+        event.currentTarget
+          .querySelector<HTMLButtonElement>(".cue-menu-trigger")
+          ?.focus();
+      }}
+    >
+      <IconButton
+        label={`${label}の操作`}
+        className="cue-menu-trigger"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <MoreVertical size={17} />
+      </IconButton>
+      {open && (
+        <div className="cue-action-menu" aria-label={`${label}の操作一覧`}>
+          <button type="button" onClick={() => closeAndRun(onEdit)}>
+            <Pencil size={15} /> 編集
+          </button>
+          <button
+            type="button"
+            disabled={!canMoveUp}
+            onClick={() => closeAndRun(onMoveUp)}
+          >
+            <ArrowUp size={15} /> 上へ移動
+          </button>
+          <button
+            type="button"
+            disabled={!canMoveDown}
+            onClick={() => closeAndRun(onMoveDown)}
+          >
+            <ArrowDown size={15} /> 下へ移動
+          </button>
+          <button
+            className="danger"
+            type="button"
+            onClick={() => closeAndRun(onDelete)}
+          >
+            <Trash2 size={15} /> 削除
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CueInsertSlot = ({
+  index,
+  terminal,
+  disabled,
+  dragActive,
+  dropTarget,
+  onInsert,
+  onDragOver,
+  onDrop,
+}: Readonly<{
+  index: number;
+  terminal?: boolean;
+  disabled: boolean;
+  dragActive: boolean;
+  dropTarget: boolean;
+  onInsert: () => void;
+  onDragOver: (event: React.DragEvent<HTMLLIElement>) => void;
+  onDrop: (event: React.DragEvent<HTMLLIElement>) => void;
+}>) => (
+  <li
+    className={terminal ? "cue-insert-slot terminal" : "cue-insert-slot"}
+    data-insert-index={index}
+    data-drag-active={dragActive}
+    data-drop-target={dropTarget}
+    role="presentation"
+    onDragOver={onDragOver}
+    onDrop={onDrop}
+  >
+    <span className="cue-insert-line" aria-hidden="true" />
+    <button
+      className="cue-insert-button"
+      type="button"
+      disabled={disabled || dragActive}
+      aria-label={
+        terminal ? "末尾にコマンドを追加" : `${index + 1}行目にコマンドを挿入`
+      }
+      onClick={onInsert}
+    >
+      <Plus size={13} aria-hidden="true" />
+      コマンドを挿入
+    </button>
+  </li>
 );
 
 const SceneRail = ({
@@ -159,9 +287,13 @@ const Timeline = ({
   setNotice: (notice?: Notice) => void;
 }>) => {
   const workspace = useWorkspace(application.store);
-  const [dialog, setDialog] = useState<
-    Readonly<{ mode: "create" }> | Readonly<{ mode: "edit"; cue: Cue }>
+  const [editor, setEditor] = useState<
+    | Readonly<{ mode: "create"; index: number }>
+    | Readonly<{ mode: "edit"; cueId: Cue["id"] }>
   >();
+  const draggedCueIdRef = useRef<Cue["id"] | undefined>(undefined);
+  const [draggedCueId, setDraggedCueId] = useState<Cue["id"]>();
+  const [dropIndex, setDropIndex] = useState<number>();
   const lane = scene.lanes[0];
   const dispatch = async (
     command: Parameters<StageWebApplication["store"]["dispatch"]>[0],
@@ -177,7 +309,98 @@ const Timeline = ({
     }
     setNotice({ tone: "success", message: "演目を更新しました" });
   };
+
+  useEffect(() => {
+    setEditor(undefined);
+    draggedCueIdRef.current = undefined;
+    setDraggedCueId(undefined);
+    setDropIndex(undefined);
+  }, [scene.id]);
+
   if (!lane) return null;
+
+  const submitCue = async (cue: Cue) => {
+    if (!editor) return;
+    await dispatch(
+      editor.mode === "edit"
+        ? {
+            type: "cue.update",
+            expectedRevision: application.store.getSnapshot().revision,
+            sceneId: scene.id,
+            laneId: lane.id,
+            cueId: editor.cueId,
+            cue,
+          }
+        : {
+            type: "cue.create",
+            expectedRevision: application.store.getSnapshot().revision,
+            sceneId: scene.id,
+            laneId: lane.id,
+            cue,
+            index: editor.index,
+          },
+    );
+    setEditor(undefined);
+  };
+
+  const resetDrag = () => {
+    draggedCueIdRef.current = undefined;
+    setDraggedCueId(undefined);
+    setDropIndex(undefined);
+  };
+
+  const dropCueAt = async (boundaryIndex: number) => {
+    const draggedId = draggedCueIdRef.current;
+    if (!draggedId) return;
+    const fromIndex = lane.cues.findIndex((cue) => cue.id === draggedId);
+    const toIndex =
+      boundaryIndex > fromIndex ? boundaryIndex - 1 : boundaryIndex;
+    const cueId = draggedId;
+    resetDrag();
+    if (fromIndex < 0 || toIndex === fromIndex) return;
+    await dispatch({
+      type: "cue.move",
+      expectedRevision: application.store.getSnapshot().revision,
+      sceneId: scene.id,
+      laneId: lane.id,
+      cueId,
+      toIndex,
+    });
+  };
+
+  const renderCreateEditor = (index: number) =>
+    editor?.mode === "create" && editor.index === index ? (
+      <li className="cue-track cue-track-editor">
+        <span className="cue-index">{index + 1}</span>
+        <CueEditor
+          scenario={workspace.scenario}
+          onClose={() => setEditor(undefined)}
+          onSubmit={submitCue}
+        />
+      </li>
+    ) : null;
+
+  const renderInsertSlot = (index: number, terminal = false) => (
+    <CueInsertSlot
+      index={index}
+      terminal={terminal}
+      disabled={editor !== undefined}
+      dragActive={draggedCueId !== undefined}
+      dropTarget={dropIndex === index}
+      onInsert={() => setEditor({ mode: "create", index })}
+      onDragOver={(event) => {
+        if (!draggedCueIdRef.current) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDropIndex(index);
+      }}
+      onDrop={(event) => {
+        if (!draggedCueIdRef.current) return;
+        event.preventDefault();
+        void dropCueAt(index);
+      }}
+    />
+  );
 
   return (
     <section className="timeline-panel">
@@ -204,137 +427,205 @@ const Timeline = ({
             <Layers3 size={13} aria-hidden="true" /> {lane.name}
           </span>
         </div>
-        <button
-          className="button primary"
-          onClick={() => setDialog({ mode: "create" })}
-        >
-          <Plus size={16} /> キューを追加
-        </button>
       </header>
 
-      <ol className="cue-list">
-        {lane.cues.map((cue, index) => (
-          <li className="cue-track" key={cue.id}>
-            <span className="cue-index">{index + 1}</span>
-            <article className="cue-card" data-active={cue.id === activeCueId}>
-              <button
-                className="cue-main"
-                onClick={() => setDialog({ mode: "edit", cue })}
+      <ol className="cue-list" data-drag-active={draggedCueId !== undefined}>
+        {lane.cues.map((cue, index) => {
+          const scriptText = cueScriptText(
+            cue,
+            workspace.scenario.roles,
+            workspace.scenario.assets,
+          );
+          const scriptNote = cueScriptNote(cue);
+          const isEditing = editor?.mode === "edit" && editor.cueId === cue.id;
+          const displayIndex =
+            index +
+            1 +
+            (editor?.mode === "create" && editor.index <= index ? 1 : 0);
+          return (
+            <Fragment key={cue.id}>
+              {renderInsertSlot(index)}
+              {renderCreateEditor(index)}
+              <li
+                className={
+                  isEditing ? "cue-track cue-track-editor" : "cue-track"
+                }
+                data-cue-id={cue.id}
               >
-                <span className={`cue-icon kind-${cue.kind.replace(".", "-")}`}>
-                  <CueKindIcon kind={cue.kind} />
-                </span>
-                <span className="cue-copy">
-                  <span className="cue-label">
-                    {cue.label || cueKindLabel[cue.kind]}
-                  </span>
-                  <span className="cue-summary">
-                    {cueSummary(cue, workspace.scenario.roles)}
-                  </span>
-                </span>
-                {cue.id === activeCueId && (
-                  <span className="live-indicator">
-                    <span /> LIVE
-                  </span>
+                <span className="cue-index">{displayIndex}</span>
+                {isEditing ? (
+                  <CueEditor
+                    scenario={workspace.scenario}
+                    cue={cue}
+                    onClose={() => setEditor(undefined)}
+                    onSubmit={submitCue}
+                  />
+                ) : (
+                  <article
+                    className="cue-card"
+                    data-active={cue.id === activeCueId}
+                    data-dragging={cue.id === draggedCueId}
+                  >
+                    <span
+                      className="cue-drag-handle"
+                      draggable={editor === undefined}
+                      title={`${scriptText}をドラッグして並べ替え`}
+                      aria-hidden="true"
+                      onDragStart={(event) => {
+                        draggedCueIdRef.current = cue.id;
+                        setDraggedCueId(cue.id);
+                        setDropIndex(index);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", cue.id);
+                        const card = event.currentTarget.closest(".cue-card");
+                        if (card) event.dataTransfer.setDragImage(card, 20, 20);
+                      }}
+                      onDragEnd={resetDrag}
+                    >
+                      <GripVertical size={16} />
+                    </span>
+                    <button
+                      className="cue-main"
+                      onClick={() => setEditor({ mode: "edit", cueId: cue.id })}
+                    >
+                      <span
+                        className={`cue-icon kind-${cue.kind.replace(".", "-")}`}
+                        title={cueKindLabel[cue.kind]}
+                      >
+                        <CueKindIcon kind={cue.kind} />
+                      </span>
+                      <span className="cue-copy">
+                        <span className="cue-script-text">
+                          <span className="visually-hidden">
+                            {cueKindLabel[cue.kind]}:{" "}
+                          </span>
+                          {scriptText}
+                        </span>
+                        {scriptNote && (
+                          <span className="cue-script-note">
+                            （{scriptNote}）
+                          </span>
+                        )}
+                      </span>
+                      {cue.id === activeCueId && (
+                        <span className="live-indicator">
+                          <span /> LIVE
+                        </span>
+                      )}
+                    </button>
+                    <div className="cue-actions">
+                      <IconButton
+                        label="この行を編集"
+                        onClick={() =>
+                          setEditor({ mode: "edit", cueId: cue.id })
+                        }
+                      >
+                        <Pencil size={15} />
+                      </IconButton>
+                      <IconButton
+                        label="上へ移動"
+                        disabled={index === 0}
+                        onClick={() =>
+                          void dispatch({
+                            type: "cue.move",
+                            expectedRevision:
+                              application.store.getSnapshot().revision,
+                            sceneId: scene.id,
+                            laneId: lane.id,
+                            cueId: cue.id,
+                            toIndex: index - 1,
+                          })
+                        }
+                      >
+                        <ArrowUp size={15} />
+                      </IconButton>
+                      <IconButton
+                        label="下へ移動"
+                        disabled={index === lane.cues.length - 1}
+                        onClick={() =>
+                          void dispatch({
+                            type: "cue.move",
+                            expectedRevision:
+                              application.store.getSnapshot().revision,
+                            sceneId: scene.id,
+                            laneId: lane.id,
+                            cueId: cue.id,
+                            toIndex: index + 1,
+                          })
+                        }
+                      >
+                        <ArrowDown size={15} />
+                      </IconButton>
+                      <IconButton
+                        label="削除"
+                        onClick={() =>
+                          void dispatch({
+                            type: "cue.delete",
+                            expectedRevision:
+                              application.store.getSnapshot().revision,
+                            sceneId: scene.id,
+                            laneId: lane.id,
+                            cueId: cue.id,
+                          })
+                        }
+                      >
+                        <Trash2 size={15} />
+                      </IconButton>
+                    </div>
+                    <CueActionMenu
+                      label={scriptText}
+                      canMoveUp={index > 0}
+                      canMoveDown={index < lane.cues.length - 1}
+                      onEdit={() => setEditor({ mode: "edit", cueId: cue.id })}
+                      onMoveUp={() =>
+                        void dispatch({
+                          type: "cue.move",
+                          expectedRevision:
+                            application.store.getSnapshot().revision,
+                          sceneId: scene.id,
+                          laneId: lane.id,
+                          cueId: cue.id,
+                          toIndex: index - 1,
+                        })
+                      }
+                      onMoveDown={() =>
+                        void dispatch({
+                          type: "cue.move",
+                          expectedRevision:
+                            application.store.getSnapshot().revision,
+                          sceneId: scene.id,
+                          laneId: lane.id,
+                          cueId: cue.id,
+                          toIndex: index + 1,
+                        })
+                      }
+                      onDelete={() =>
+                        void dispatch({
+                          type: "cue.delete",
+                          expectedRevision:
+                            application.store.getSnapshot().revision,
+                          sceneId: scene.id,
+                          laneId: lane.id,
+                          cueId: cue.id,
+                        })
+                      }
+                    />
+                  </article>
                 )}
-              </button>
-              <div className="cue-actions">
-                <IconButton
-                  label="編集"
-                  onClick={() => setDialog({ mode: "edit", cue })}
-                >
-                  <Pencil size={15} />
-                </IconButton>
-                <IconButton
-                  label="上へ移動"
-                  disabled={index === 0}
-                  onClick={() =>
-                    void dispatch({
-                      type: "cue.move",
-                      expectedRevision:
-                        application.store.getSnapshot().revision,
-                      sceneId: scene.id,
-                      laneId: lane.id,
-                      cueId: cue.id,
-                      toIndex: index - 1,
-                    })
-                  }
-                >
-                  <ArrowUp size={15} />
-                </IconButton>
-                <IconButton
-                  label="下へ移動"
-                  disabled={index === lane.cues.length - 1}
-                  onClick={() =>
-                    void dispatch({
-                      type: "cue.move",
-                      expectedRevision:
-                        application.store.getSnapshot().revision,
-                      sceneId: scene.id,
-                      laneId: lane.id,
-                      cueId: cue.id,
-                      toIndex: index + 1,
-                    })
-                  }
-                >
-                  <ArrowDown size={15} />
-                </IconButton>
-                <IconButton
-                  label="削除"
-                  onClick={() =>
-                    void dispatch({
-                      type: "cue.delete",
-                      expectedRevision:
-                        application.store.getSnapshot().revision,
-                      sceneId: scene.id,
-                      laneId: lane.id,
-                      cueId: cue.id,
-                    })
-                  }
-                >
-                  <Trash2 size={15} />
-                </IconButton>
-              </div>
-            </article>
-          </li>
-        ))}
+              </li>
+            </Fragment>
+          );
+        })}
+        {lane.cues.length > 0 && renderInsertSlot(lane.cues.length, true)}
+        {renderCreateEditor(lane.cues.length)}
       </ol>
-      {lane.cues.length === 0 && (
+      {lane.cues.length === 0 && !editor && (
         <button
           className="empty-lane"
-          onClick={() => setDialog({ mode: "create" })}
+          onClick={() => setEditor({ mode: "create", index: 0 })}
         >
-          <Plus size={20} /> 最初のキューを追加
+          <Plus size={20} /> 台本の最初の行を書く
         </button>
-      )}
-
-      {dialog && (
-        <CueDialog
-          scenario={workspace.scenario}
-          {...(dialog.mode === "edit" ? { cue: dialog.cue } : {})}
-          onClose={() => setDialog(undefined)}
-          onSubmit={async (cue) => {
-            await dispatch(
-              dialog.mode === "edit"
-                ? {
-                    type: "cue.update",
-                    expectedRevision: application.store.getSnapshot().revision,
-                    sceneId: scene.id,
-                    laneId: lane.id,
-                    cueId: dialog.cue.id,
-                    cue,
-                  }
-                : {
-                    type: "cue.create",
-                    expectedRevision: application.store.getSnapshot().revision,
-                    sceneId: scene.id,
-                    laneId: lane.id,
-                    cue,
-                  },
-            );
-            setDialog(undefined);
-          }}
-        />
       )}
     </section>
   );
@@ -359,6 +650,7 @@ const CastPanel = ({
     token: "",
     sessionId: "stage",
     ttsEndpoint: "",
+    ttsToken: "",
   });
   const [connecting, setConnecting] = useState(false);
   const scoped =
@@ -456,7 +748,7 @@ const CastPanel = ({
                   >
                     {actor.name}
                     {actor.kind === "device" ? " · 実機" : " · WASM"}
-                    {actor.availability !== "online" ? " (offline)" : ""}
+                    {actor.availability !== "online" ? "（オフライン）" : ""}
                   </option>
                 ))}
               </select>
@@ -575,6 +867,9 @@ const CastPanel = ({
                   ...(gateway.ttsEndpoint.trim()
                     ? { ttsEndpoint: gateway.ttsEndpoint.trim() }
                     : {}),
+                  ...(gateway.ttsToken.trim()
+                    ? { ttsToken: gateway.ttsToken.trim() }
+                    : {}),
                 });
                 setNotice({
                   tone: "success",
@@ -642,10 +937,27 @@ const CastPanel = ({
                     ttsEndpoint: event.target.value,
                   }))
                 }
-                placeholder="https://example.test/tts"
+                placeholder="http://127.0.0.1:8788/stage/v1/tts/opus"
               />
               <small className="field-hint">
                 実機でセリフを上演する場合に指定
+              </small>
+            </label>
+            <label className="field">
+              <span>Opus TTS token</span>
+              <input
+                type="password"
+                value={gateway.ttsToken}
+                onChange={(event) =>
+                  setGateway((current) => ({
+                    ...current,
+                    ttsToken: event.target.value,
+                  }))
+                }
+                autoComplete="off"
+              />
+              <small className="field-hint">
+                Stack-chan AI側の専用token（URLには含めません）
               </small>
             </label>
             <div className="gateway-actions">
@@ -908,8 +1220,9 @@ const PerformancePanel = ({
               ? cueSummary(
                   workspace.runtime.active.cue,
                   workspace.scenario.roles,
+                  workspace.scenario.assets,
                 )
-              : `${selectedScene.lanes[0]?.cues.length ?? 0} cues`}
+              : `${selectedScene.lanes[0]?.cues.length ?? 0} キュー`}
           </span>
         </div>
         <div className="performance-controls">
@@ -1072,7 +1385,7 @@ export const App = ({
           />
         </div>
         <span className="project-count">
-          <Clapperboard size={14} /> {workspace.scenario.scenes.length} scenes ·{" "}
+          <Clapperboard size={14} /> {workspace.scenario.scenes.length} 場面 ·{" "}
           {workspace.scenario.scenes.reduce(
             (count, scene) =>
               count +
@@ -1082,7 +1395,7 @@ export const App = ({
               ),
             0,
           )}{" "}
-          cues
+          キュー
         </span>
       </div>
 

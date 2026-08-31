@@ -10,7 +10,7 @@ import {
   Smile,
 } from "lucide-react";
 
-import type { Cue, Role } from "@stackchan-stage/domain";
+import type { AssetMetadata, Cue, Role } from "@stackchan-stage/domain";
 
 export const cueKindLabel: Record<Cue["kind"], string> = {
   speech: "セリフ",
@@ -48,29 +48,80 @@ export const CueKindIcon = ({ kind }: Readonly<{ kind: Cue["kind"] }>) => {
   }
 };
 
-export const cueSummary = (cue: Cue, roles: readonly Role[]) => {
+const expressionLabel: Readonly<Record<string, string>> = {
+  NEUTRAL: "いつもの表情",
+  HAPPY: "笑顔",
+  ANGRY: "怒った表情",
+  SAD: "悲しい表情",
+  SLEEPY: "眠そうな表情",
+  DOUBTFUL: "不思議そうな表情",
+  COLD: "寒そうな表情",
+  HOT: "暑そうな表情",
+};
+
+const motionLabel: Readonly<Record<string, string>> = {
+  neutral: "正面を向く",
+  nod: "うなずく",
+  shake: "首を横に振る",
+  bow: "お辞儀する",
+  "look-left": "左を見る",
+  "look-right": "右を見る",
+};
+
+const formatDuration = (durationMs: number) =>
+  durationMs >= 1_000
+    ? `${Number((durationMs / 1_000).toFixed(1))}秒`
+    : `${durationMs}ミリ秒`;
+
+export const cueScriptText = (
+  cue: Cue,
+  roles: readonly Role[],
+  assets: readonly AssetMetadata[] = [],
+) => {
   const role =
     "roleId" in cue
       ? roles.find((candidate) => candidate.id === cue.roleId)?.name
       : undefined;
+  const roleName = "roleId" in cue ? (role ?? cue.roleId) : undefined;
+  const assetName =
+    "assetId" in cue
+      ? (assets.find((asset) => asset.id === cue.assetId)?.name ?? cue.assetId)
+      : undefined;
   switch (cue.kind) {
     case "speech":
-      return `${role ?? cue.roleId}「${cue.text}」`;
+      return `${roleName}「${cue.text}」`;
     case "expression":
-      return `${role ?? cue.roleId} · ${cue.expression}`;
+      return `${roleName}　${expressionLabel[cue.expression] ?? cue.expression}`;
     case "motion":
-      return `${role ?? cue.roleId} · ${cue.motion.kind === "preset" ? cue.motion.name : "ポーズ"}`;
+      return cue.motion.kind === "preset"
+        ? `${roleName}　${motionLabel[cue.motion.name] ?? cue.motion.name}`
+        : `${roleName}　yaw ${cue.motion.yaw} / pitch ${cue.motion.pitch} / ${formatDuration(cue.motion.durationMs)}`;
     case "lighting.set":
-      return `${role ?? cue.roleId} · ${cue.color} · ${Math.round(cue.brightness * 100)}%`;
+      return `${roleName}のライト　${cue.color} / ${Math.round(cue.brightness * 100)}%`;
     case "lighting.play":
-      return `${role ?? cue.roleId} · ${cue.effect}`;
+      return `${roleName}のライト　${cue.effect}`;
     case "backdrop.set":
-      return `${cue.assetId} · ${cue.transition.kind}`;
+      return `「${assetName}」へ${
+        cue.transition.kind === "cut"
+          ? "切り替える"
+          : cue.transition.kind === "fade"
+            ? `${formatDuration(cue.transition.durationMs)}かけてフェードする`
+            : `${formatDuration(cue.transition.durationMs)}かけて${cue.transition.direction}へスライドする`
+      }`;
     case "music.start":
-      return `${cue.assetId} · ${Math.round(cue.volume * 100)}%`;
+      return `「${assetName}」を音量${Math.round(cue.volume * 100)}%で再生${cue.loop ? "（ループ）" : ""}`;
     case "music.stop":
-      return `${cue.fadeOutMs} ms`;
+      return cue.fadeOutMs > 0
+        ? `${formatDuration(cue.fadeOutMs)}でフェードアウト`
+        : "すぐに停止";
     case "pause":
-      return `${cue.durationMs} ms`;
+      return `${formatDuration(cue.durationMs)}、間を置く`;
   }
 };
+
+export const cueScriptNote = (cue: Cue) =>
+  [cue.label, cue.kind === "speech" ? cue.direction : undefined]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ");
+
+export const cueSummary = cueScriptText;

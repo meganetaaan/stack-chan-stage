@@ -158,10 +158,12 @@ const parseEndpointResponse = (
 
 export const createTtsAudioPreparationPort = ({
   endpoint,
+  authorizationToken,
   cache = createMemoryAudioCache(),
   fetchImplementation = globalThis.fetch,
 }: Readonly<{
   endpoint?: string;
+  authorizationToken?: string;
   cache?: AudioCache;
   fetchImplementation?: typeof fetch;
 }> = {}): AudioPreparationPort => ({
@@ -174,7 +176,12 @@ export const createTtsAudioPreparationPort = ({
     else {
       const response = await fetchImplementation(endpoint, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...(authorizationToken
+            ? { authorization: `Bearer ${authorizationToken}` }
+            : {}),
+        },
         body: JSON.stringify({
           text: speech.text,
           direction: speech.direction,

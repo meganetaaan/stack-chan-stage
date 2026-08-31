@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   asCueExecutionId,
+  asRunId,
   compileRun,
   reduceRuntime,
   type RunPlan,
@@ -17,8 +18,9 @@ import {
   sceneId,
 } from "./fixtures";
 
-const compileFixture = (): RunPlan => {
+const compileFixture = (runId = asRunId("run-fixture")): RunPlan => {
   const result = compileRun({
+    runId,
     scenario: scenarioFixture(),
     sceneIds: [sceneId],
     castPlan: castFixture(),
@@ -42,8 +44,19 @@ describe("Run compiler", () => {
     });
   });
 
+  it("上演ごとのRunIdをCue実行IDへ反映し、音声fingerprintは再利用する", () => {
+    const first = compileFixture(asRunId("run-first"));
+    const second = compileFixture(asRunId("run-second"));
+
+    expect(first.id).toBe("run-first");
+    expect(second.id).toBe("run-second");
+    expect(first.cues[0]?.executionId).not.toBe(second.cues[0]?.executionId);
+    expect(first.speech[0]?.fingerprint).toBe(second.speech[0]?.fingerprint);
+  });
+
   it("offline Actorをrejectする", () => {
     const result = compileRun({
+      runId: asRunId("run-offline"),
       scenario: scenarioFixture(),
       sceneIds: [sceneId],
       castPlan: castFixture(),

@@ -18,6 +18,7 @@ import {
 import {
   asActorId,
   asAssetId,
+  asRunId,
   castPlanSchema,
   compileRun,
   parseScenario,
@@ -51,6 +52,11 @@ import { z } from "zod";
 
 import { createActorRouter } from "./actor-router";
 import { defaultCastPlan, defaultScenario } from "./default-workspace";
+import {
+  applyPreviewSpeechMode,
+  type PreviewSpeechMode,
+} from "./preview-speech-mode";
+import { waitForRunEnd } from "./wait-for-run-end";
 
 const gatewaySettingsSchema = z
   .object({
@@ -61,13 +67,37 @@ const gatewaySettingsSchema = z
     token: z.string().min(16).max(512),
     sessionId: z.string().trim().min(1).max(128),
     ttsEndpoint: z.url().optional(),
+    ttsToken: z.string().min(16).max(512).optional(),
   })
   .strict();
 
 export type GatewaySettings = Readonly<z.output<typeof gatewaySettingsSchema>>;
 
+const gatewaySettingsErrorMessage = (error: z.ZodError) => {
+  switch (error.issues[0]?.path[0]) {
+    case "gatewayUrl":
+      return "Gateway URLはws://またはwss://で入力してください";
+    case "token":
+      return "Pairing tokenは16文字以上で入力してください";
+    case "sessionId":
+      return "Sessionを入力してください";
+    case "ttsEndpoint":
+      return "Opus TTS endpointには有効なURLを入力してください";
+    case "ttsToken":
+      return "Opus TTS tokenは16文字以上で入力してください";
+    default:
+      return "Gateway設定を確認してください";
+  }
+};
+
 export type PerformanceResult =
-  | Readonly<{ ok: true; runId: string; state: RuntimeState }>
+  | Readonly<{
+      ok: true;
+      runId: string;
+      state: RuntimeState;
+      warnings?: readonly ValidationIssue[];
+      skippedCueIds?: readonly CueId[];
+    }>
   | Readonly<{ ok: false; issues: readonly ValidationIssue[] }>;
 
 export type StageWebApplication = Readonly<{
@@ -100,6 +130,8 @@ const hexadecimal = (buffer: ArrayBuffer) =>
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 
+const nextRunId = () => asRunId(`run-${crypto.randomUUID()}`);
+
 const createStageProxy = (): StagePort &
   Readonly<{ setDelegate: (stage?: BrowserStagePort) => void }> => {
   let delegate: BrowserStagePort | undefined;
@@ -122,32 +154,6 @@ const createStageProxy = (): StagePort &
     },
   };
 };
-
-const waitForRunEnd = (
-  coordinator: ReturnType<typeof createRuntimeCoordinator>,
-  signal: AbortSignal,
-) =>
-  new Promise<RuntimeState>((resolve) => {
-    let settled = false;
-    let unsubscribe = () => {};
-    const finish = (state: RuntimeState) => {
-      if (settled) return;
-      settled = true;
-      unsubscribe();
-      signal.removeEventListener("abort", abort);
-      resolve(state);
-    };
-    const abort = () => {
-      void coordinator.stop().then(() => finish(coordinator.getState()));
-    };
-    const registeredUnsubscribe = coordinator.subscribe((state) => {
-      if (["completed", "failed", "idle"].includes(state.status)) finish(state);
-    });
-    unsubscribe = registeredUnsubscribe;
-    if (settled) registeredUnsubscribe();
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
-  });
 
 const slicePlan = (
   plan: RunPlan,
@@ -229,6 +235,7 @@ export const createStageWebApplication =
     };
     const stageBridge = createHostStageBridge(playback);
     let ttsEndpoint: string | undefined;
+    let ttsToken: string | undefined;
     let audioImplementation = createTtsAudioPreparationPort({
       cache: audioCache,
     });
@@ -237,12 +244,14 @@ export const createStageWebApplication =
       prepare: (speech, signal) => audioImplementation.prepare(speech, signal),
       release: (assetId) => audioImplementation.release(assetId),
     };
-    const setTtsEndpoint = async (endpoint?: string) => {
-      if (endpoint === ttsEndpoint) return;
+    const setTtsEndpoint = async (endpoint?: string, token?: string) => {
+      if (endpoint === ttsEndpoint && token === ttsToken) return;
       ttsEndpoint = endpoint;
+      ttsToken = token;
       audioImplementation = createTtsAudioPreparationPort({
         cache: audioCache,
         ...(endpoint ? { endpoint } : {}),
+        ...(token ? { authorizationToken: token } : {}),
       });
       const staleEntries = await audioCache.entries();
       await Promise.all(
@@ -346,6 +355,7 @@ export const createStageWebApplication =
         castPlan = { global: { assignments }, scenes: {} };
       }
       return compileRun({
+        runId: nextRunId(),
         scenario: workspace.scenario,
         sceneIds,
         castPlan,
@@ -360,6 +370,7 @@ export const createStageWebApplication =
         fromCueId?: string;
         toCueId?: string;
         actorId?: string;
+        speechMode?: PreviewSpeechMode;
       }>,
       signal: AbortSignal,
     ): Promise<PerformanceResult> => {
@@ -374,12 +385,18 @@ export const createStageWebApplication =
         await coordinator.reset();
       const compiled = compile(input.sceneIds, input.actorId);
       if (!compiled.ok) return { ok: false, issues: compiled.issues };
-      const plan = slicePlan(compiled.plan, input.fromCueId, input.toCueId);
-      if (!plan)
+      const slicedPlan = slicePlan(
+        compiled.plan,
+        input.fromCueId,
+        input.toCueId,
+      );
+      if (!slicedPlan)
         return {
           ok: false,
           issues: [issue("cue.range_invalid", "PreviewするCue範囲が不正です")],
         };
+      const preview = applyPreviewSpeechMode(slicedPlan, input.speechMode);
+      const { plan } = preview;
       const deviceSpeech = plan.cues.some((entry) => {
         if (!entry.speech || !entry.actorId) return false;
         return plan.actors.some(
@@ -396,7 +413,14 @@ export const createStageWebApplication =
             ),
           ],
         };
-      await resumeAudio();
+      const webAudioRequired = plan.cues.some((entry) => {
+        if (entry.cue.kind === "music.start") return true;
+        if (!ttsEndpoint || !entry.speech || !entry.actorId) return false;
+        return plan.actors.some(
+          (actor) => actor.id === entry.actorId && actor.kind === "wasm",
+        );
+      });
+      if (webAudioRequired) await resumeAudio();
       await coordinator.prepare(plan);
       if (coordinator.getState().status !== "ready") {
         const state = coordinator.getState();
@@ -412,7 +436,20 @@ export const createStageWebApplication =
       }
       await coordinator.play();
       const state = await waitForRunEnd(coordinator, signal);
-      return { ok: true, runId: plan.id, state };
+      if (state.status === "failed")
+        return {
+          ok: false,
+          issues: [issue(state.failure.code, state.failure.message)],
+        };
+      return {
+        ok: true,
+        runId: plan.id,
+        state,
+        ...(preview.warnings.length > 0 ? { warnings: preview.warnings } : {}),
+        ...(preview.skippedCueIds.length > 0
+          ? { skippedCueIds: preview.skippedCueIds }
+          : {}),
+      };
     };
 
     const performance: PerformanceTools = {
@@ -476,9 +513,12 @@ export const createStageWebApplication =
         const parsedSettings = gatewaySettingsSchema.safeParse(settings);
         if (!parsedSettings.success)
           throw new TypeError(
-            `Gateway設定が不正です: ${z.prettifyError(parsedSettings.error)}`,
+            gatewaySettingsErrorMessage(parsedSettings.error),
           );
-        await setTtsEndpoint(parsedSettings.data.ttsEndpoint);
+        await setTtsEndpoint(
+          parsedSettings.data.ttsEndpoint,
+          parsedSettings.data.ttsToken,
+        );
         removeDevice?.();
         removeDevice = undefined;
         device = createDeviceActorAdapter({

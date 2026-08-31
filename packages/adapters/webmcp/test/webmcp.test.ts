@@ -137,4 +137,58 @@ describe("WebMCP adapter", () => {
       execution.signal,
     );
   });
+
+  it("実行オプションが省略された場合は登録単位のAbortSignalを使う", async () => {
+    const tools = new Map<string, WebMcpTool>();
+    const preview = vi.fn(async () => ({ ok: true }));
+    let registrationSignal: AbortSignal | undefined;
+    await registerStageWebMcpTools({
+      store: createWorkspaceStore(initialWorkspace()),
+      performance: { preview, play: async () => ({}), stop: async () => ({}) },
+      importAsset: vi.fn(),
+      document: {
+        modelContext: {
+          registerTool(
+            tool: WebMcpTool,
+            options?: Readonly<{ signal?: AbortSignal }>,
+          ) {
+            tools.set(tool.name, tool);
+            registrationSignal = options?.signal;
+          },
+        },
+      } satisfies WebMcpDocument,
+    });
+
+    await tools
+      .get("stage.performance.preview")!
+      .execute({ sceneIds: ["scene-1"], speechMode: "skip" });
+
+    expect(registrationSignal).toBeInstanceOf(AbortSignal);
+    expect(preview).toHaveBeenCalledWith(
+      { sceneIds: ["scene-1"], speechMode: "skip" },
+      registrationSignal,
+    );
+  });
+
+  it("未定義のspeechModeをperformanceへ渡さない", async () => {
+    const tools = new Map<string, WebMcpTool>();
+    const preview = vi.fn(async () => ({ ok: true }));
+    await registerStageWebMcpTools({
+      store: createWorkspaceStore(initialWorkspace()),
+      performance: { preview, play: async () => ({}), stop: async () => ({}) },
+      importAsset: vi.fn(),
+      document: {
+        modelContext: {
+          registerTool: (tool: WebMcpTool) => void tools.set(tool.name, tool),
+        },
+      } satisfies WebMcpDocument,
+    });
+
+    await expect(
+      tools
+        .get("stage.performance.preview")!
+        .execute({ sceneIds: ["scene-1"], speechMode: "mute" }),
+    ).resolves.toMatchObject({ ok: false, code: "invalid_input" });
+    expect(preview).not.toHaveBeenCalled();
+  });
 });

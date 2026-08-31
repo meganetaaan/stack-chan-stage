@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   asAssetId,
+  asRunId,
   compileRun,
   type ActorId,
   type CueExecutionId,
@@ -54,6 +55,7 @@ class EventQueue implements AsyncIterable<ActorEvent> {
 
 const planFixture = (): RunPlan => {
   const result = compileRun({
+    runId: asRunId("run-runtime-loop"),
     scenario: scenarioFixture(),
     sceneIds: [sceneId],
     castPlan: castFixture(),
@@ -61,6 +63,15 @@ const planFixture = (): RunPlan => {
   });
   if (!result.ok) throw new Error(JSON.stringify(result.issues));
   return result.plan;
+};
+
+const planWithOnly = (
+  kind: RunPlan["cues"][number]["cue"]["kind"],
+): RunPlan => {
+  const plan = planFixture();
+  const cue = plan.cues.find((entry) => entry.cue.kind === kind);
+  if (!cue) throw new Error(`Cue ${kind} not found`);
+  return { ...plan, cues: [cue], speech: cue.speech ? [cue.speech] : [] };
 };
 
 const harness = () => {
@@ -163,5 +174,49 @@ describe("Runtime coordinator", () => {
       failure: { code: "audio_prepare_failed", message: "TTS unavailable" },
     });
     coordinator.dispose();
+  });
+
+  it("間を置くタイマー満了時に次へ進みRunを終了する", async () => {
+    vi.useFakeTimers();
+    const ports = harness();
+    const coordinator = createRuntimeCoordinator(ports);
+    try {
+      await coordinator.prepare(planWithOnly("pause"));
+      await coordinator.play();
+      expect(coordinator.getState()).toMatchObject({
+        status: "playing",
+        active: { cue: { kind: "pause" } },
+      });
+
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(coordinator.getState().status).toBe("completed");
+    } finally {
+      coordinator.dispose();
+      ports.events.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("watchdog満了時に外部eventなしでRunを失敗させる", async () => {
+    vi.useFakeTimers();
+    const ports = harness();
+    const coordinator = createRuntimeCoordinator(ports);
+    try {
+      const plan = planWithOnly("expression");
+      await coordinator.prepare(plan);
+      await coordinator.play();
+
+      await vi.advanceTimersByTimeAsync(plan.cues[0]!.timeoutMs);
+
+      expect(coordinator.getState()).toMatchObject({
+        status: "failed",
+        failure: { code: "cue_timeout" },
+      });
+    } finally {
+      coordinator.dispose();
+      ports.events.close();
+      vi.useRealTimers();
+    }
   });
 });

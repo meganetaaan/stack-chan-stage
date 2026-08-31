@@ -17,6 +17,7 @@ export const SimulatorView = ({
   const viewportRef = useRef<HTMLCanvasElement>(null);
   const screenRef = useRef<HTMLCanvasElement>(null);
   const [phase, setPhase] = useState<SimulatorPhase>("loading");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -75,7 +76,7 @@ export const SimulatorView = ({
       detachStage();
       application.setSimulatorAvailability("offline");
     };
-  }, [application, onPhaseChange]);
+  }, [application, attempt, onPhaseChange]);
 
   return (
     <div
@@ -101,9 +102,20 @@ export const SimulatorView = ({
           role={phase === "error" ? "alert" : "status"}
         >
           <span className="simulator-state-dot" />
-          {phase === "error"
-            ? "Simulatorを起動できません"
-            : "Simulatorを準備中"}
+          <span>
+            {phase === "error"
+              ? "Simulatorを起動できません"
+              : "Simulatorを準備中"}
+          </span>
+          {phase === "error" && (
+            <button
+              className="simulator-retry"
+              type="button"
+              onClick={() => setAttempt((current) => current + 1)}
+            >
+              再試行
+            </button>
+          )}
         </div>
       )}
     </div>

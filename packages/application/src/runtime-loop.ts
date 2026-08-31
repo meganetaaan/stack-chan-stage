@@ -64,15 +64,13 @@ export const createRuntimeCoordinator = ({
     clearExecutionTimer(executionId);
     timers.set(
       executionId,
-      setTimeout(
-        () =>
-          enqueue({
-            type: "CUE_TIMEOUT",
-            executionId:
-              executionId as import("@stackchan-stage/domain").CueExecutionId,
-          }),
-        durationMs,
-      ),
+      setTimeout(() => {
+        void dispatch({
+          type: "CUE_TIMEOUT",
+          executionId:
+            executionId as import("@stackchan-stage/domain").CueExecutionId,
+        });
+      }, durationMs),
     );
   };
 
@@ -171,14 +169,12 @@ export const createRuntimeCoordinator = ({
         clearExecutionTimer(effect.executionId);
         timers.set(
           effect.executionId,
-          setTimeout(
-            () =>
-              enqueue({
-                type: "CUE_COMPLETED",
-                executionId: effect.executionId,
-              }),
-            effect.durationMs,
-          ),
+          setTimeout(() => {
+            void dispatch({
+              type: "CUE_COMPLETED",
+              executionId: effect.executionId,
+            });
+          }, effect.durationMs),
         );
         break;
       case "run.cleanup":

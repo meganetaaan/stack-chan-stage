@@ -195,7 +195,7 @@ p {
 .stage-brand,
 .eyebrow {
   color: #8e9a9f;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 750;
   line-height: 1.3;
   letter-spacing: 0;
@@ -409,7 +409,7 @@ p {
 .scene-number {
   color: #91999e;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .scene-name {
@@ -509,7 +509,7 @@ p {
 .cue-list {
   position: relative;
   display: grid;
-  gap: 8px;
+  gap: 0;
 }
 
 .cue-list::before {
@@ -530,6 +530,89 @@ p {
   gap: 10px;
 }
 
+.cue-insert-slot {
+  position: relative;
+  z-index: 3;
+  height: 12px;
+}
+
+.cue-insert-slot.terminal {
+  height: 22px;
+}
+
+.cue-insert-line {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 41px;
+  height: 1px;
+  background: transparent;
+  transform: translateY(-50%);
+  transition:
+    height 120ms ease,
+    background 120ms ease;
+}
+
+.cue-insert-button {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: calc(50% + 20px);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 9px;
+  color: #39706c;
+  background: var(--canvas);
+  border: 1px solid #a8c7c4;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px #17333014;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease,
+    opacity 100ms ease;
+  white-space: nowrap;
+}
+
+.cue-insert-slot:hover .cue-insert-line,
+.cue-insert-slot:focus-within .cue-insert-line {
+  background: #a8cfcb;
+}
+
+.cue-insert-slot:hover .cue-insert-button:not(:disabled),
+.cue-insert-slot:focus-within .cue-insert-button:not(:disabled) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cue-insert-button:hover:not(:disabled),
+.cue-insert-button:focus-visible {
+  color: #175c57;
+  background: #f5fbfa;
+  border-color: #65aaa4;
+}
+
+.cue-insert-button:disabled {
+  cursor: default;
+  opacity: 0;
+}
+
+.cue-list[data-drag-active="true"] .cue-insert-line {
+  background: #c8d8d6;
+}
+
+.cue-insert-slot[data-drop-target="true"] .cue-insert-line {
+  height: 3px;
+  background: #16827b;
+}
+
 .cue-index {
   display: grid;
   place-items: center;
@@ -540,27 +623,55 @@ p {
   border: 1px solid #cbd2d1;
   border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
 }
 
 .cue-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   min-width: 0;
   overflow: hidden;
-  background: var(--paper);
-  border: 1px solid #d4dada;
-  border-radius: 6px;
+  background: transparent;
+  border-bottom: 1px solid #d4dada;
 }
 
 .cue-card:hover {
+  background: #fbfcfb;
   border-color: #aeb9b7;
 }
 
 .cue-card[data-active="true"] {
-  border-color: #16827b;
+  background: #edf7f5;
+  border-color: #9ccbc6;
   box-shadow: inset 3px 0 #16827b;
+}
+
+.cue-card[data-dragging="true"] {
+  background: #edf7f5;
+  opacity: 0.45;
+}
+
+.cue-drag-handle {
+  display: grid;
+  align-self: stretch;
+  place-items: center;
+  min-height: 58px;
+  color: #9aa4a8;
+  cursor: grab;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+  user-select: none;
+}
+
+.cue-drag-handle:hover {
+  color: #3b6d69;
+  background: #edf4f3;
+}
+
+.cue-drag-handle:active {
+  cursor: grabbing;
 }
 
 .cue-main {
@@ -569,7 +680,8 @@ p {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  padding: 9px 10px;
+  min-height: 58px;
+  padding: 11px 12px;
   text-align: left;
   background: transparent;
 }
@@ -610,21 +722,20 @@ p {
 .cue-copy {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: 3px;
 }
 
-.cue-label {
-  color: #343b40;
+.cue-script-text {
+  color: #2b3135;
+  font-size: 15px;
+  font-weight: 580;
+  line-height: 1.5;
+}
+
+.cue-script-note {
+  color: #737d83;
   font-size: 11px;
-  font-weight: 750;
-}
-
-.cue-summary {
-  overflow: hidden;
-  color: #717a80;
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
 }
 
 .cue-actions {
@@ -632,7 +743,62 @@ p {
   align-items: center;
   gap: 1px;
   padding: 0 7px;
-  border-left: 1px solid #e1e5e4;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.cue-card:hover .cue-actions,
+.cue-actions:focus-within {
+  opacity: 1;
+}
+
+.cue-mobile-actions {
+  display: none;
+}
+
+.cue-track-editor {
+  align-items: start;
+}
+
+.cue-track-editor > .cue-index {
+  margin-top: 20px;
+}
+
+.cue-action-menu {
+  position: absolute;
+  z-index: 12;
+  top: 4px;
+  right: 42px;
+  display: grid;
+  width: 154px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #cbd2d1;
+  border-radius: 6px;
+  box-shadow: 0 12px 28px #1821262b;
+}
+
+.cue-action-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #4f595f;
+  text-align: left;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.cue-action-menu button:hover:not(:disabled) {
+  color: var(--ink);
+  background: #edf1f0;
+}
+
+.cue-action-menu button.danger {
+  color: #a83f39;
 }
 
 .live-indicator {
@@ -640,7 +806,7 @@ p {
   align-items: center;
   gap: 4px;
   color: #b34538;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -749,7 +915,7 @@ p {
 .asset-copy code {
   overflow: hidden;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -766,7 +932,7 @@ p {
   background: #fff;
   border: 1px solid #c9d0d0;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .field textarea {
@@ -823,13 +989,13 @@ p {
   min-width: 0;
   gap: 5px;
   color: #535d63;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
 }
 
 .field-hint {
   color: #8a5550;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
 }
 
@@ -884,7 +1050,7 @@ p {
 }
 
 .gateway-actions,
-.dialog-actions,
+.cue-editor-actions,
 .asset-import-controls {
   display: flex;
   align-items: center;
@@ -941,7 +1107,7 @@ p {
 }
 
 .empty-assets span {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -991,8 +1157,23 @@ p {
   background: #181e22e6;
   border: 1px solid #394248;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: 11px;
   transform: translate(-50%, -50%);
+}
+
+.simulator-retry {
+  min-height: 28px;
+  padding: 0 8px;
+  color: #edf2f1;
+  background: #2c353a;
+  border: 1px solid #4a565c;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.simulator-retry:hover {
+  background: #39444a;
 }
 
 .simulator-state-dot,
@@ -1069,7 +1250,7 @@ p {
   background: #20262a;
   border: 1px solid #374047;
   border-radius: 4px;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 750;
 }
 
@@ -1119,7 +1300,7 @@ p {
 
 .now-playing > span:last-child {
   color: #9ca7ab;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .performance-controls {
@@ -1163,46 +1344,47 @@ p {
   background: #cf5549;
 }
 
-.dialog-scrim {
-  position: fixed;
-  z-index: 100;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 18px;
-  background: #111719a8;
+.cue-inline-editor {
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #a9c9c5;
+  border-left: 3px solid var(--teal);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px #18212612;
 }
 
-.dialog {
-  width: min(620px, 100%);
-  max-height: min(760px, calc(100dvh - 36px));
-  overflow: auto;
-  background: var(--paper);
-  border: 1px solid #c8cecd;
-  border-radius: 7px;
-  box-shadow: 0 24px 80px #0d171b42;
-}
-
-.dialog-header {
-  position: sticky;
-  z-index: 2;
-  top: 0;
+.cue-editor-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 15px 17px;
-  background: #f8faf9;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f1f8f6;
   border-bottom: 1px solid var(--line);
 }
 
-.dialog-header h2 {
-  font-size: 17px;
+.cue-editor-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.dialog-form {
+.cue-editor-heading h3 {
+  margin: 1px 0 0;
+  font-size: 14px;
+}
+
+.cue-editor-form {
   display: grid;
   gap: 14px;
-  padding: 17px;
+  padding: 14px;
+}
+
+.cue-editor-form textarea[data-cue-primary] {
+  min-height: 104px;
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 .check-field {
@@ -1226,10 +1408,10 @@ p {
   color: #873a35;
   background: #f8e5e2;
   border-left: 3px solid var(--danger);
-  font-size: 10px;
+  font-size: 11px;
 }
 
-.dialog-actions {
+.cue-editor-actions {
   padding-top: 4px;
 }
 
@@ -1251,7 +1433,7 @@ p {
   border-left: 4px solid #4dbbb2;
   border-radius: 6px;
   box-shadow: 0 10px 30px #111a1e3b;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .notice.error {
@@ -1265,7 +1447,7 @@ p {
 .notice small {
   grid-column: 1;
   color: #b7c0c3;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .notice .icon-button {
@@ -1297,9 +1479,34 @@ p {
     padding-inline: 16px;
   }
 
-  .cue-actions .icon-button:nth-child(2),
-  .cue-actions .icon-button:nth-child(3) {
+  .cue-card {
+    position: relative;
+    grid-template-columns: 28px minmax(0, 1fr) 44px;
+    overflow: visible;
+  }
+
+  .cue-actions {
     display: none;
+  }
+
+  .cue-mobile-actions {
+    position: relative;
+    display: grid;
+    align-self: stretch;
+    place-items: center;
+    background: var(--paper);
+    border-left: 1px solid #e1e5e4;
+    border-radius: 0 5px 5px 0;
+  }
+
+  .cue-mobile-actions > .cue-menu-trigger {
+    width: 44px;
+    height: 100%;
+    min-height: 50px;
+  }
+
+  .cue-track:has(.cue-action-menu) {
+    z-index: 5;
   }
 
   .status-chip.runtime {
@@ -1348,7 +1555,7 @@ p {
   }
 
   .project-count {
-    font-size: 9px;
+    font-size: 10px;
   }
 
   .workspace-layout {
@@ -1400,12 +1607,29 @@ p {
     width: auto;
     min-width: 100px;
     max-width: 170px;
-    min-height: 40px;
+    min-height: 44px;
   }
 
-  .scene-item svg,
-  .scene-delete {
+  .scene-item svg {
     display: none;
+  }
+
+  .scene-item[data-selected="true"] {
+    padding-right: 43px;
+  }
+
+  .scene-delete {
+    top: 2px;
+    right: 2px;
+    display: inline-grid;
+    width: 40px;
+    height: 40px;
+    opacity: 1;
+  }
+
+  .scene-rail .panel-heading .icon-button {
+    width: 40px;
+    height: 40px;
   }
 
   .work-surface {
@@ -1424,18 +1648,6 @@ p {
 
   .scene-title-input {
     font-size: 19px;
-  }
-
-  .cue-card {
-    grid-template-columns: minmax(0, 1fr) 40px;
-  }
-
-  .cue-actions {
-    padding: 0 4px;
-  }
-
-  .cue-actions .icon-button:not(:first-child) {
-    display: none;
   }
 
   .performance-panel {
@@ -1468,7 +1680,7 @@ p {
     color: #929da2;
     background: transparent;
     border-top: 2px solid transparent;
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 650;
   }
 
@@ -1499,19 +1711,17 @@ p {
     white-space: nowrap;
   }
 
-  .timeline-header .button {
-    width: 34px;
-    padding: 0;
-    font-size: 0;
-  }
-
-  .timeline-header .button svg {
-    margin: 0;
-  }
-
   .cue-track {
     grid-template-columns: 25px minmax(0, 1fr);
     gap: 7px;
+  }
+
+  .cue-insert-line {
+    left: 32px;
+  }
+
+  .cue-insert-button {
+    left: calc(50% + 16px);
   }
 
   .cue-list::before {
@@ -1593,18 +1803,52 @@ p {
     max-width: 52vw;
   }
 
-  .dialog-scrim {
-    align-items: end;
-    padding: 0;
+  .cue-script-text {
+    font-size: 14px;
   }
 
-  .dialog {
-    width: 100%;
-    max-height: calc(100dvh - 18px);
-    border-right: 0;
-    border-bottom: 0;
-    border-left: 0;
-    border-radius: 7px 7px 0 0;
+  .cue-editor-header,
+  .cue-editor-form {
+    padding-inline: 11px;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .cue-drag-handle {
+    display: none;
+  }
+
+  .cue-insert-slot {
+    height: 32px;
+  }
+
+  .cue-insert-slot.terminal {
+    height: 38px;
+  }
+
+  .cue-insert-line {
+    background: #d4dfdd;
+  }
+
+  .cue-insert-button {
+    width: 30px;
+    min-height: 30px;
+    padding: 0;
+    border-radius: 50%;
+    box-shadow: none;
+    font-size: 0;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .cue-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) and (max-width: 1120px) {
+  .cue-card {
+    grid-template-columns: minmax(0, 1fr) 44px;
   }
 }
 

@@ -27,7 +27,7 @@ ScenarioとCastから実行時のRunPlanを確定し、Cueの完了イベント�
 
 外部入力は各adapterの境界でZod Schemaへ通します。
 対象は保存データ、WebMCP入力、Gateway protocol、TTS応答、Host.Stageイベント、音声provider dataです。
-Zod 4はStandard Schemaの`~standard`契約を実装しているため、Valibotは追加せずSchema実装をZodへ統一しています。
+検証Schemaは、Standard Schemaの`~standard`契約に対応するZod 4へ統一しています。
 
 ## 必要な環境
 
@@ -60,7 +60,7 @@ npm run test:e2e
 ```
 
 `npm run check`はformat、型、unit/property/contract/integration test、Simulator assetのハッシュ、production buildを検査します。
-E2EはWASM起動、画面ピクセル、Cue入力検証、Host.Stageの往復、終演、モバイル表示をChromiumで確認します。
+E2EはWASM起動、画面ピクセル、Cue入力検証、Host.Stageの往復、終演、モバイル表示に加え、WebMCPによる台本の取得・追記・推敲とUI反映をChromiumで確認します。
 
 ## Local Gatewayと実機
 
@@ -96,7 +96,10 @@ Gatewayはpacket creditを超えた送信、64 KiBを超えるmessage、不正Sc
 
 TTS endpointを指定しない場合、ブラウザのSpeech Synthesisを使います。
 実機SpeechにはOpus packetが必要なため、UIのLocal Gateway設定へOpus生成endpointを入力します。
+認証付きendpointではtokenをOpus TTS tokenへ入力します。tokenはBearer headerで送信し、URLやrequest bodyには含めません。
 endpoint応答はformat、packet数、packetサイズ、base64をSchemaで検証してからcacheへ保存します。
+Speech Synthesisを提供しない埋込みブラウザでは、WebMCPの`stage.performance.preview`へ`speechMode: "skip"`を明示するとセリフを除外した視覚試演ができます。
+この場合は成功結果に`warnings`と`skippedCueIds`が含まれ、音声を再生したものとは扱いません。
 
 ## Simulator成果物の再生成
 
@@ -123,7 +126,6 @@ npm run build:stage-wasm-host
 - Runtimeは1 Laneを直列実行します。
 - ブラウザ既定TTSは音声データを生成しないため、実機上演にはOpus生成endpointが必要です。
 - このリポジトリの自動テストは実機への書込み、サーボ動作、実スピーカー再生を実行しません。
-- Public siteへのdeployはリポジトリ外のhosting設定で行います。
 
 設計の背景とMVP条件は[`stack-chan-stage-overview-design.md`](stack-chan-stage-overview-design.md)を参照してください。
 第三者成果物の出典とライセンスは[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)に記載しています。

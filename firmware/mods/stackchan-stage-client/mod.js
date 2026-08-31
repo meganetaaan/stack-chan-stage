@@ -1,11 +1,16 @@
 import { emotionFromName } from "face-state";
 import archiveConfig from "mod/config";
 import { createStageClientCore } from "stage-client-core";
+import { createStageLipSync } from "stage-lip-sync";
+import { createStageMotion } from "stage-motion-presets";
 import { createStageRuntimeEnvironment } from "stage-runtime-environment";
 import Timer from "timer";
 
 const delay = (milliseconds) =>
   new Promise((resolve) => Timer.set(resolve, milliseconds));
+
+const motion = createStageMotion(delay);
+const lipSync = createStageLipSync(delay);
 
 const defaultCapabilities = Object.freeze({
   protocolVersion: 1,
@@ -35,46 +40,6 @@ const defaultCapabilities = Object.freeze({
 
 const stageError = (code, message, retryable = false) =>
   Object.assign(new Error(message), { code, retryable });
-
-const setPose = (robot, yaw, pitch, roll, durationMs) =>
-  robot.motion.setPose(
-    { rotation: { y: yaw, p: pitch, r: roll } },
-    durationMs / 1000,
-  );
-
-const playMotionPreset = async (robot, name) => {
-  switch (name) {
-    case "neutral":
-      await setPose(robot, 0, 0, 0, 350);
-      return;
-    case "nod":
-      await setPose(robot, 0, 0.18, 0, 220);
-      await setPose(robot, 0, -0.12, 0, 220);
-      await setPose(robot, 0, 0, 0, 220);
-      return;
-    case "shake":
-      await setPose(robot, -0.22, 0, 0, 220);
-      await setPose(robot, 0.22, 0, 0, 300);
-      await setPose(robot, 0, 0, 0, 220);
-      return;
-    case "bow":
-      await setPose(robot, 0, 0.3, 0, 450);
-      await delay(350);
-      await setPose(robot, 0, 0, 0, 450);
-      return;
-    case "look-left":
-      await setPose(robot, -0.28, 0, 0, 350);
-      return;
-    case "look-right":
-      await setPose(robot, 0.28, 0, 0, 350);
-      return;
-    default:
-      throw stageError(
-        "unsupported_motion",
-        `Unsupported motion preset: ${name}`,
-      );
-  }
-};
 
 const parseColor = (value, brightness) => {
   const scale = Math.max(0, Math.min(1, brightness));
@@ -123,7 +88,12 @@ const createCueApplication = (robot, media) => async (command, lifecycle) => {
           "audio_metadata_missing",
           "Speech Cue has no audio stream metadata",
         );
-      await media.awaitPlayback(command.audio.streamId, lifecycle.markStarted);
+      await lipSync.play(
+        robot.face,
+        (markStarted) =>
+          media.awaitPlayback(command.audio.streamId, markStarted),
+        lifecycle.markStarted,
+      );
       return;
     case "expression": {
       const emotion = emotionFromName(cue.expression);
@@ -139,9 +109,9 @@ const createCueApplication = (robot, media) => async (command, lifecycle) => {
     case "motion":
       lifecycle.markStarted();
       if (cue.motion.kind === "preset")
-        await playMotionPreset(robot, cue.motion.name);
+        await motion.playPreset(robot, cue.motion.name);
       else
-        await setPose(
+        await motion.setPose(
           robot,
           cue.motion.yaw,
           cue.motion.pitch,
@@ -182,7 +152,7 @@ export function onContextCreated(robot) {
     applyCue: createCueApplication(robot, environment.media),
     cancelCue: async () => {
       await environment.media.abortActive("Cue cancelled");
-      await setPose(robot, 0, 0, 0, 250);
+      await motion.setPose(robot, 0, 0, 0, 250);
       robot.lighting.lightOff("head");
     },
   });

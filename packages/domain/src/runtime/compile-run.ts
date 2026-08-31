@@ -1,8 +1,6 @@
 import {
-  canonicalJson,
   deepFreeze,
   asCueExecutionId,
-  asRunId,
   issue,
   ownRecordValue,
   type ValidationIssue,
@@ -20,15 +18,6 @@ import type {
   PlannedSpeech,
   RunPlan,
 } from "./types";
-
-const stableHash = (value: unknown): string => {
-  let hash = 0x811c9dc5;
-  for (const byte of new TextEncoder().encode(canonicalJson(value))) {
-    hash ^= byte;
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-};
 
 export const timeoutForCue = (cue: Cue): number => {
   switch (cue.kind) {
@@ -110,14 +99,7 @@ export const compileRun = (input: CompileRunInput): CompileRunResult => {
     else issues.push(...result.issues);
   }
 
-  const runIdentity = {
-    scenario: input.scenario,
-    sceneIds: scenes.map((scene) => scene.id),
-    castPlan: input.castPlan,
-    actors: input.actors,
-    assets: input.assets ?? input.scenario.assets,
-  };
-  const runId = asRunId(`run-${stableHash(runIdentity)}`);
+  const runId = input.runId;
   const planned: PlannedCue[] = [];
   const speech: PlannedSpeech[] = [];
 
