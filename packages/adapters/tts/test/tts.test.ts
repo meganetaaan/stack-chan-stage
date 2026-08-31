@@ -44,6 +44,57 @@ const speechSynthesisWith = (voices: readonly SpeechSynthesisVoice[]) => ({
   speak: vi.fn(),
 });
 
+const encodeBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+
+const oggCrc = (data: Uint8Array): number => {
+  let crc = 0;
+  for (const byte of data) {
+    crc ^= byte << 24;
+    for (let bit = 0; bit < 8; bit += 1)
+      crc =
+        (crc & 0x80000000) !== 0
+          ? ((crc << 1) ^ 0x04c11db7) >>> 0
+          : (crc << 1) >>> 0;
+  }
+  return crc >>> 0;
+};
+
+const parseOggPages = (data: Uint8Array) => {
+  const pages: Array<{
+    checksum: number;
+    flags: number;
+    granulePosition: bigint;
+    packet: Uint8Array;
+    sequence: number;
+    validChecksum: boolean;
+  }> = [];
+  let offset = 0;
+  while (offset < data.byteLength) {
+    const segmentCount = data[offset + 26];
+    if (segmentCount === undefined) throw new Error("Incomplete Ogg header");
+    const segmentTable = data.subarray(offset + 27, offset + 27 + segmentCount);
+    const packetLength = segmentTable.reduce(
+      (sum, segmentLength) => sum + segmentLength,
+      0,
+    );
+    const pageLength = 27 + segmentCount + packetLength;
+    const page = data.slice(offset, offset + pageLength);
+    const view = new DataView(page.buffer, page.byteOffset, page.byteLength);
+    const checksum = view.getUint32(22, true);
+    view.setUint32(22, 0, true);
+    pages.push({
+      checksum,
+      flags: page[5] ?? 0,
+      granulePosition: view.getBigUint64(6, true),
+      packet: page.slice(27 + segmentCount),
+      sequence: view.getUint32(18, true),
+      validChecksum: oggCrc(page) === checksum,
+    });
+    offset += pageLength;
+  }
+  return pages;
+};
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("TTS adapter", () => {
@@ -213,6 +264,62 @@ describe("TTS adapter", () => {
       kind: "opus-packets",
       packets: [Uint8Array.of(1, 2), Uint8Array.of(3, 4)],
     });
+  });
+
+  it("raw Opus packetだけのendpoint応答を再生可能なOggへ組み立てる", async () => {
+    const firstPacket = Uint8Array.from({ length: 255 }, (_, index) => index);
+    const secondPacket = Uint8Array.of(0xf8, 0xff, 0xfe);
+    const port = createTtsAudioPreparationPort({
+      endpoint: "https://tts.example.test/v1/speech",
+      fetchImplementation: async () =>
+        new Response(
+          JSON.stringify({
+            format: {
+              codec: "opus",
+              sampleRate: 24_000,
+              channels: 1,
+              frameDurationMs: 20,
+            },
+            packets: [encodeBase64(firstPacket), encodeBase64(secondPacket)],
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    const prepared = await port.prepare(speech);
+    if (!prepared.data) throw new Error("Expected muxed Ogg audio");
+    const pages = parseOggPages(prepared.data);
+    const headPage = pages[0];
+    const tagsPage = pages[1];
+    if (!headPage || !tagsPage) throw new Error("Expected Ogg headers");
+
+    expect(prepared.mimeType).toBe("audio/ogg; codecs=opus");
+    expect(pages).toHaveLength(4);
+    expect(pages.map((page) => page.sequence)).toEqual([0, 1, 2, 3]);
+    expect(pages.map((page) => page.flags)).toEqual([0x02, 0, 0, 0x04]);
+    expect(pages.map((page) => page.granulePosition)).toEqual([
+      0n,
+      0n,
+      960n,
+      1_920n,
+    ]);
+    expect(pages.every((page) => page.validChecksum)).toBe(true);
+    expect(new TextDecoder().decode(headPage.packet.slice(0, 8))).toBe(
+      "OpusHead",
+    );
+    expect(headPage.packet[9]).toBe(1);
+    expect(
+      new DataView(
+        headPage.packet.buffer,
+        headPage.packet.byteOffset,
+        headPage.packet.byteLength,
+      ).getUint32(12, true),
+    ).toBe(24_000);
+    expect(new TextDecoder().decode(tagsPage.packet.slice(0, 8))).toBe(
+      "OpusTags",
+    );
+    expect(pages[2]?.packet).toEqual(firstPacket);
+    expect(pages[3]?.packet).toEqual(secondPacket);
   });
 
   it("認証tokenをBearer headerで送り、request bodyへ含めない", async () => {

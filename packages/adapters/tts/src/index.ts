@@ -86,6 +86,109 @@ const decodeBase64 = (value: string): Uint8Array<ArrayBuffer> => {
   return bytes;
 };
 
+const concatenateBytes = (
+  chunks: readonly Uint8Array[],
+): Uint8Array<ArrayBuffer> => {
+  const result = new Uint8Array(
+    chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0),
+  );
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+};
+
+const oggCrc = (data: Uint8Array): number => {
+  let crc = 0;
+  for (const byte of data) {
+    crc ^= byte << 24;
+    for (let bit = 0; bit < 8; bit += 1)
+      crc =
+        (crc & 0x80000000) !== 0
+          ? ((crc << 1) ^ 0x04c11db7) >>> 0
+          : (crc << 1) >>> 0;
+  }
+  return crc >>> 0;
+};
+
+const oggPage = (
+  packet: Uint8Array,
+  serial: number,
+  sequence: number,
+  granulePosition: bigint,
+  flags: number,
+): Uint8Array<ArrayBuffer> => {
+  const segmentCount = Math.floor(packet.byteLength / 255) + 1;
+  const page = new Uint8Array(27 + segmentCount + packet.byteLength);
+  page.set(new TextEncoder().encode("OggS"));
+  page[4] = 0;
+  page[5] = flags;
+  const view = new DataView(page.buffer);
+  view.setBigUint64(6, granulePosition, true);
+  view.setUint32(14, serial, true);
+  view.setUint32(18, sequence, true);
+  page[26] = segmentCount;
+  let remaining = packet.byteLength;
+  for (let index = 0; index < segmentCount; index += 1) {
+    const segmentLength = Math.min(255, remaining);
+    page[27 + index] = segmentLength;
+    remaining -= segmentLength;
+  }
+  page.set(packet, 27 + segmentCount);
+  view.setUint32(22, oggCrc(page), true);
+  return page;
+};
+
+const stageOpusHead = (): Uint8Array<ArrayBuffer> => {
+  const head = new Uint8Array(19);
+  head.set(new TextEncoder().encode("OpusHead"));
+  head[8] = 1;
+  head[9] = STAGE_OPUS_FORMAT.channels;
+  const view = new DataView(head.buffer);
+  view.setUint32(12, STAGE_OPUS_FORMAT.sampleRate, true);
+  return head;
+};
+
+const stageOpusTags = (): Uint8Array<ArrayBuffer> => {
+  const vendor = new TextEncoder().encode("stackchan-stage");
+  const tags = new Uint8Array(16 + vendor.byteLength);
+  tags.set(new TextEncoder().encode("OpusTags"));
+  const view = new DataView(tags.buffer);
+  view.setUint32(8, vendor.byteLength, true);
+  tags.set(vendor, 12);
+  view.setUint32(12 + vendor.byteLength, 0, true);
+  return tags;
+};
+
+const muxStageOpusPackets = (
+  packets: readonly Uint8Array[],
+): Uint8Array<ArrayBuffer> => {
+  const serial = 0x53544143;
+  const pages: Uint8Array[] = [
+    oggPage(stageOpusHead(), serial, 0, 0n, 0x02),
+    oggPage(stageOpusTags(), serial, 1, 0n, 0),
+  ];
+  const samplesPerFrame = BigInt(
+    (48_000 * STAGE_OPUS_FORMAT.frameDurationMs) / 1_000,
+  );
+  let granulePosition = 0n;
+  packets.forEach((packet, index) => {
+    granulePosition += samplesPerFrame;
+    pages.push(
+      oggPage(
+        packet,
+        serial,
+        index + 2,
+        granulePosition,
+        index === packets.length - 1 ? 0x04 : 0,
+      ),
+    );
+  });
+  return concatenateBytes(pages);
+};
+
 const base64BytesSchema = z.string().transform((value, context) => {
   try {
     return decodeBase64(value);
@@ -244,14 +347,17 @@ const parseEndpointResponse = (
     throw new Error(
       `TTS endpoint returned an invalid response: ${z.prettifyError(parsed.error)}`,
     );
-  const { packets, audioBase64: data, mimeType } = parsed.data;
+  const { packets, audioBase64, mimeType } = parsed.data;
+  const data = audioBase64 ?? muxStageOpusPackets(packets);
   const byteSize = packets.reduce((sum, packet) => sum + packet.byteLength, 0);
   return {
     id: asAssetId(`speech-${speech.fingerprint}`),
     fingerprint: speech.fingerprint,
-    mimeType: mimeType ?? "audio/ogg; codecs=opus",
+    mimeType: audioBase64
+      ? (mimeType ?? "audio/ogg; codecs=opus")
+      : "audio/ogg; codecs=opus",
     byteSize,
-    ...(data ? { data } : {}),
+    data,
     providerData: {
       kind: "opus-packets",
       format: STAGE_OPUS_FORMAT,
