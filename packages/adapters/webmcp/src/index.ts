@@ -50,6 +50,9 @@ declare global {
 export type WebMcpDocument = Readonly<{ modelContext?: ModelContextLike }>;
 
 export type PerformanceTools = Readonly<{
+  validate?: (
+    input: Readonly<{ sceneIds?: readonly string[] }>,
+  ) => Promise<unknown> | unknown;
   preview: (
     input: Readonly<{
       sceneIds?: readonly string[];
@@ -291,6 +294,7 @@ export const registerStageWebMcpTools = async ({
       async execute(input) {
         const parsed = parse(schemas.empty, input);
         if (!parsed.ok) return parsed.result;
+        if (performance.validate) return await performance.validate({});
         const workspace = store.getSnapshot();
         const compiled = compileRun({
           runId: asRunId("run-validation"),

@@ -38,6 +38,11 @@ import {
   type Scene,
   type ValidationIssue,
 } from "@stackchan-stage/domain";
+import {
+  BROWSER_VOICE_READY_TIMEOUT_MS,
+  DEFAULT_BROWSER_VOICE_ID,
+  resolveSpeechSynthesisVoice,
+} from "@stackchan-stage/tts";
 
 import type { StageWebApplication } from "./composition/application";
 import { CueEditor } from "./features/editor/CueEditor";
@@ -631,6 +636,119 @@ const Timeline = ({
   );
 };
 
+const readBrowserVoices = (): readonly SpeechSynthesisVoice[] => {
+  if (typeof globalThis.speechSynthesis === "undefined") return [];
+  return [...globalThis.speechSynthesis.getVoices()].sort((left, right) => {
+    const leftJapanese = left.lang.toLowerCase().startsWith("ja") ? 0 : 1;
+    const rightJapanese = right.lang.toLowerCase().startsWith("ja") ? 0 : 1;
+    return (
+      leftJapanese - rightJapanese ||
+      Number(right.default) - Number(left.default) ||
+      Number(right.localService) - Number(left.localService) ||
+      left.name.localeCompare(right.name)
+    );
+  });
+};
+
+const useBrowserVoices = () => {
+  const [state, setState] = useState<
+    Readonly<{
+      voices: readonly SpeechSynthesisVoice[];
+      status: "loading" | "ready" | "unavailable";
+    }>
+  >(() => {
+    const voices = readBrowserVoices();
+    return {
+      voices,
+      status:
+        voices.length > 0
+          ? "ready"
+          : typeof globalThis.speechSynthesis === "undefined"
+            ? "unavailable"
+            : "loading",
+    };
+  });
+  useEffect(() => {
+    if (typeof globalThis.speechSynthesis === "undefined") {
+      setState({ voices: [], status: "unavailable" });
+      return;
+    }
+    const update = () => {
+      const voices = readBrowserVoices();
+      if (voices.length > 0) setState({ voices, status: "ready" });
+    };
+    update();
+    globalThis.speechSynthesis.addEventListener("voiceschanged", update);
+    const timeout = setTimeout(
+      () =>
+        setState((current) =>
+          current.voices.length > 0
+            ? current
+            : { voices: [], status: "unavailable" },
+        ),
+      BROWSER_VOICE_READY_TIMEOUT_MS,
+    );
+    return () => {
+      clearTimeout(timeout);
+      globalThis.speechSynthesis.removeEventListener("voiceschanged", update);
+    };
+  }, []);
+  return state;
+};
+
+const browserVoiceValue = (voice: SpeechSynthesisVoice) =>
+  voice.voiceURI || voice.name;
+
+const BrowserVoiceSelect = ({
+  ariaLabel,
+  locale,
+  onChange,
+  value,
+  voices,
+}: Readonly<{
+  ariaLabel: string;
+  locale?: string | undefined;
+  onChange: (voiceId: string) => void;
+  value: string;
+  voices: readonly SpeechSynthesisVoice[];
+}>) => {
+  const isAvailable =
+    value === DEFAULT_BROWSER_VOICE_ID ||
+    voices.some((voice) => voice.voiceURI === value || voice.name === value);
+  let defaultLabel = "ブラウザ既定";
+  if (voices.length > 0) {
+    const resolved = resolveSpeechSynthesisVoice(voices, {
+      voiceId: DEFAULT_BROWSER_VOICE_ID,
+      ...(locale ? { locale } : {}),
+    });
+    defaultLabel = `ブラウザ既定 · ${resolved.name} (${resolved.lang})`;
+  }
+
+  return (
+    <select
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value={DEFAULT_BROWSER_VOICE_ID}>{defaultLabel}</option>
+      {!isAvailable && (
+        <option value={value} disabled>
+          {value}（このブラウザでは利用不可）
+        </option>
+      )}
+      {voices.map((voice) => {
+        const optionValue = browserVoiceValue(voice);
+        return (
+          <option value={optionValue} key={`${optionValue}:${voice.lang}`}>
+            {voice.name} · {voice.lang}
+            {voice.localService ? " · ローカル" : " · リモート"}
+          </option>
+        );
+      })}
+    </select>
+  );
+};
+
 const CastPanel = ({
   application,
   scene,
@@ -643,7 +761,9 @@ const CastPanel = ({
   const workspace = useWorkspace(application.store);
   const [scope, setScope] = useState<"global" | "scene">("global");
   const [roleName, setRoleName] = useState("");
-  const [voiceId, setVoiceId] = useState("Kyoko");
+  const [voiceId, setVoiceId] = useState(DEFAULT_BROWSER_VOICE_ID);
+  const browserVoiceState = useBrowserVoices();
+  const browserVoices = browserVoiceState.voices;
   const [gatewayOpen, setGatewayOpen] = useState(false);
   const [gateway, setGateway] = useState({
     gatewayUrl: "ws://127.0.0.1:8787",
@@ -687,6 +807,31 @@ const CastPanel = ({
     );
   };
 
+  const saveRoleVoice = async (role: Role, nextVoiceId: string) => {
+    const result = await application.store.dispatch({
+      type: "role.update",
+      expectedRevision: application.store.getSnapshot().revision,
+      roleId: role.id,
+      role: {
+        ...role,
+        voice: {
+          ...role.voice,
+          provider: "browser",
+          voiceId: nextVoiceId,
+        },
+      },
+    });
+    setNotice(
+      result.ok
+        ? { tone: "success", message: `${role.name}の音声を更新しました` }
+        : {
+            tone: "error",
+            message: result.message,
+            issues: result.validationIssues,
+          },
+    );
+  };
+
   return (
     <section className="workspace-panel cast-panel">
       <header className="panel-heading">
@@ -710,9 +855,22 @@ const CastPanel = ({
         </div>
       </header>
 
+      {browserVoiceState.status === "unavailable" &&
+        !application.isTtsEndpointConfigured() && (
+          <p className="capability-note" role="status">
+            この環境ではブラウザ音声を利用できません。音声付き上演には、ブラウザ再生可能な音声を返すOpus
+            TTS endpointが必要です。
+          </p>
+        )}
+
       <div className="cast-grid">
         {workspace.scenario.roles.map((role) => {
           const assigned = ownRecordValue(scoped.assignments, role.id) ?? "";
+          const roleVoice = role.voice ?? {
+            provider: "browser",
+            voiceId: DEFAULT_BROWSER_VOICE_ID,
+            locale: "ja-JP",
+          };
           return (
             <div className="cast-row" key={role.id}>
               <div className="role-avatar">{role.name.slice(0, 1)}</div>
@@ -720,38 +878,57 @@ const CastPanel = ({
                 <strong>{role.name}</strong>
                 <span>{role.description || role.id}</span>
               </div>
-              <select
-                aria-label={`${role.name}のActor`}
-                value={assigned}
-                onChange={(event) => {
-                  const actorId = workspace.actors.find(
-                    (actor) => actor.id === event.target.value,
-                  )?.id;
-                  const assignments = Object.fromEntries(
-                    Object.entries(scoped.assignments).filter(
-                      ([key]) => key !== role.id,
-                    ),
-                  );
-                  void saveCast(
-                    actorId
-                      ? { ...assignments, [role.id]: actorId }
-                      : assignments,
-                  );
-                }}
-              >
-                <option value="">未配役</option>
-                {workspace.actors.map((actor) => (
-                  <option
-                    value={actor.id}
-                    key={actor.id}
-                    disabled={actor.availability !== "online"}
+              <div className="cast-controls">
+                <label className="cast-control">
+                  <span>Actor</span>
+                  <select
+                    aria-label={`${role.name}のActor`}
+                    value={assigned}
+                    onChange={(event) => {
+                      const actorId = workspace.actors.find(
+                        (actor) => actor.id === event.target.value,
+                      )?.id;
+                      const assignments = Object.fromEntries(
+                        Object.entries(scoped.assignments).filter(
+                          ([key]) => key !== role.id,
+                        ),
+                      );
+                      void saveCast(
+                        actorId
+                          ? { ...assignments, [role.id]: actorId }
+                          : assignments,
+                      );
+                    }}
                   >
-                    {actor.name}
-                    {actor.kind === "device" ? " · 実機" : " · WASM"}
-                    {actor.availability !== "online" ? "（オフライン）" : ""}
-                  </option>
-                ))}
-              </select>
+                    <option value="">未配役</option>
+                    {workspace.actors.map((actor) => (
+                      <option
+                        value={actor.id}
+                        key={actor.id}
+                        disabled={actor.availability !== "online"}
+                      >
+                        {actor.name}
+                        {actor.kind === "device" ? " · 実機" : " · WASM"}
+                        {actor.availability !== "online"
+                          ? "（オフライン）"
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="cast-control">
+                  <span>ブラウザ音声</span>
+                  <BrowserVoiceSelect
+                    ariaLabel={`${role.name}のブラウザ音声`}
+                    locale={roleVoice.locale}
+                    value={roleVoice.voiceId}
+                    voices={browserVoices}
+                    onChange={(nextVoiceId) =>
+                      void saveRoleVoice(role, nextVoiceId)
+                    }
+                  />
+                </label>
+              </div>
             </div>
           );
         })}
@@ -829,10 +1006,13 @@ const CastPanel = ({
             />
           </label>
           <label className="field">
-            <span>Voice ID</span>
-            <input
+            <span>ブラウザ音声</span>
+            <BrowserVoiceSelect
+              ariaLabel="新しい役のブラウザ音声"
+              locale="ja-JP"
               value={voiceId}
-              onChange={(event) => setVoiceId(event.target.value)}
+              voices={browserVoices}
+              onChange={setVoiceId}
             />
           </label>
           <button className="button secondary" type="submit">

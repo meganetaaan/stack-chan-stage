@@ -108,6 +108,7 @@ export type StageWebApplication = Readonly<{
   attachStageRoot: (root: HTMLElement) => () => void;
   connectGateway: (settings: GatewaySettings) => Promise<void>;
   disconnectGateway: () => void;
+  isTtsEndpointConfigured: () => boolean;
   importFileAsset: (
     file: File,
     kind: AssetKind,
@@ -234,10 +235,17 @@ export const createStageWebApplication =
       await player(audio, options);
     };
     const stageBridge = createHostStageBridge(playback);
+    const browserSpeechSynthesis =
+      typeof globalThis.speechSynthesis === "undefined"
+        ? undefined
+        : globalThis.speechSynthesis;
     let ttsEndpoint: string | undefined;
     let ttsToken: string | undefined;
     let audioImplementation = createTtsAudioPreparationPort({
       cache: audioCache,
+      ...(browserSpeechSynthesis
+        ? { speechSynthesis: browserSpeechSynthesis }
+        : {}),
     });
     const audio: AudioPreparationPort = {
       get: (fingerprint) => audioImplementation.get(fingerprint),
@@ -250,6 +258,9 @@ export const createStageWebApplication =
       ttsToken = token;
       audioImplementation = createTtsAudioPreparationPort({
         cache: audioCache,
+        ...(browserSpeechSynthesis
+          ? { speechSynthesis: browserSpeechSynthesis }
+          : {}),
         ...(endpoint ? { endpoint } : {}),
         ...(token ? { authorizationToken: token } : {}),
       });
@@ -453,6 +464,41 @@ export const createStageWebApplication =
     };
 
     const performance: PerformanceTools = {
+      validate(input) {
+        const compiled = compile(input.sceneIds);
+        if (!compiled.ok) return { ok: false, issues: compiled.issues };
+        const issues: ValidationIssue[] = [];
+        const speechActorKinds = new Set(
+          compiled.plan.cues.flatMap((entry) => {
+            if (!entry.speech || !entry.actorId) return [];
+            const actor = compiled.plan.actors.find(
+              (candidate) => candidate.id === entry.actorId,
+            );
+            return actor ? [actor.kind] : [];
+          }),
+        );
+        if (speechActorKinds.has("device") && !ttsEndpoint)
+          issues.push(
+            issue(
+              "speech.opus_endpoint_missing",
+              "実機SpeechにはOpus TTS endpointを設定してください",
+            ),
+          );
+        if (
+          speechActorKinds.has("wasm") &&
+          !ttsEndpoint &&
+          (browserSpeechSynthesis?.getVoices().length ?? 0) === 0
+        )
+          issues.push(
+            issue(
+              "speech.browser_voice_unavailable",
+              "このブラウザでは音声合成用の音声を利用できません。ブラウザ再生可能な音声を返すOpus TTS endpointを設定してください",
+            ),
+          );
+        return issues.length > 0
+          ? { ok: false, issues }
+          : { ok: true, issues: [], cueCount: compiled.plan.cues.length };
+      },
       preview: (input, signal) => run(input, signal),
       play: (input, signal) => run(input, signal),
       async stop(signal) {
@@ -544,6 +590,7 @@ export const createStageWebApplication =
         removeDevice = undefined;
         device = undefined;
       },
+      isTtsEndpointConfigured: () => ttsEndpoint !== undefined,
       async importFileAsset(file, kind, license) {
         return importBlob(file, file.name, kind, undefined, license);
       },

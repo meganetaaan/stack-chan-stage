@@ -22,13 +22,13 @@ export const defaultScenario = (): Scenario => ({
       id: narratorRoleId,
       name: "語り手",
       description: "舞台を進行する役",
-      voice: { provider: "browser", voiceId: "Kyoko", locale: "ja-JP" },
+      voice: { provider: "browser", voiceId: "default", locale: "ja-JP" },
     },
     {
       id: guestRoleId,
       name: "ゲスト",
       description: "もうひとりの登場人物",
-      voice: { provider: "browser", voiceId: "Kyoko", locale: "ja-JP" },
+      voice: { provider: "browser", voiceId: "default", locale: "ja-JP" },
     },
   ],
   scenes: [

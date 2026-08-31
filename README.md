@@ -96,6 +96,8 @@ Gatewayはpacket creditを超えた送信、64 KiBを超えるmessage、不正Sc
 ## TTS
 
 TTS endpointを指定しない場合、ブラウザのSpeech Synthesisを使います。
+`voiceId: "default"`は上演前に指定localeへ合う実在音声へ解決します。明示した音声が存在しない場合はブラウザ既定へ暗黙に切り替えず、`voiceschanged`を待ったうえで準備エラーとして報告します。生成済みcacheも現在の音声一覧に対して再検証します。
+通常の連続発話に`cancel()`、固定待機、失敗時の自動再試行は挟みません。
 実機SpeechにはOpus packetが必要なため、UIのLocal Gateway設定へOpus生成endpointを入力します。
 認証付きendpointではtokenをOpus TTS tokenへ入力します。tokenはBearer headerで送信し、URLやrequest bodyには含めません。
 endpoint応答はformat、packet数、packetサイズ、base64をSchemaで検証してからcacheへ保存します。

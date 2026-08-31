@@ -138,6 +138,37 @@ describe("WebMCP adapter", () => {
     );
   });
 
+  it("演目検証へ実行環境固有の音声検証結果を反映する", async () => {
+    const tools = new Map<string, WebMcpTool>();
+    const validate = vi.fn(() => ({
+      ok: false,
+      issues: [{ code: "speech.browser_voice_unavailable" }],
+    }));
+    await registerStageWebMcpTools({
+      store: createWorkspaceStore(initialWorkspace()),
+      performance: {
+        validate,
+        preview: async () => ({}),
+        play: async () => ({}),
+        stop: async () => ({}),
+      },
+      importAsset: vi.fn(),
+      document: {
+        modelContext: {
+          registerTool: (tool: WebMcpTool) => void tools.set(tool.name, tool),
+        },
+      } satisfies WebMcpDocument,
+    });
+
+    await expect(
+      tools.get("stage.scenario.validate")!.execute({}),
+    ).resolves.toMatchObject({
+      ok: false,
+      issues: [{ code: "speech.browser_voice_unavailable" }],
+    });
+    expect(validate).toHaveBeenCalledWith({});
+  });
+
   it("実行オプションが省略された場合は登録単位のAbortSignalを使う", async () => {
     const tools = new Map<string, WebMcpTool>();
     const preview = vi.fn(async () => ({ ok: true }));
