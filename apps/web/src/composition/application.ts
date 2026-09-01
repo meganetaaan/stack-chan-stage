@@ -25,6 +25,7 @@ import {
   compileRun,
   parseScenario,
   type ActorId,
+  type AssetId,
   type AssetKind,
   type AssetMetadata,
   type CueId,
@@ -59,6 +60,7 @@ import {
   type PreviewSpeechMode,
 } from "./preview-speech-mode";
 import { waitForRunEnd } from "./wait-for-run-end";
+import { loadSourceBackedAsset } from "./source-backed-assets";
 import {
   createProjectArchive,
   projectArchiveFileName,
@@ -203,7 +205,9 @@ export const createStageWebApplication =
       ? castPlanSchema.safeParse(loaded.castPlan)
       : undefined;
     const initialScenario =
-      parsedScenario?.ok === true ? parsedScenario.scenario : defaultScenario();
+      parsedScenario?.ok === true
+        ? parsedScenario.scenario
+        : defaultScenario(document.baseURI);
     const initialCast =
       parsedCast?.success === true ? parsedCast.data : defaultCastPlan();
     const initialRevision =
@@ -315,6 +319,32 @@ export const createStageWebApplication =
     const resumeAudio = async () => {
       const context = getAudioContext();
       if (context?.state === "suspended") await context.resume();
+    };
+    const removeAudioUnlock = () => {
+      window.removeEventListener("pointerdown", unlockAudio, true);
+      window.removeEventListener("keydown", unlockAudio, true);
+    };
+    const unlockAudio = () => {
+      removeAudioUnlock();
+      void resumeAudio().catch((error) =>
+        console.warn("[audio] unlock failed", error),
+      );
+    };
+    window.addEventListener("pointerdown", unlockAudio, {
+      capture: true,
+      once: true,
+    });
+    window.addEventListener("keydown", unlockAudio, {
+      capture: true,
+      once: true,
+    });
+
+    const resolveWorkspaceAsset = async (assetId: AssetId) => {
+      const asset = store
+        .getSnapshot()
+        .scenario.assets.find((candidate) => candidate.id === assetId);
+      if (!asset) return undefined;
+      return loadSourceBackedAsset(asset, projectStore);
     };
 
     const importBlob = async (
@@ -565,13 +595,7 @@ export const createStageWebApplication =
         const currentAudioContext = getAudioContext();
         const current = createBrowserStagePort({
           root,
-          resolveAsset: async (assetId) => {
-            const blob = await projectStore.loadBlob(assetId);
-            if (blob) return blob;
-            return store
-              .getSnapshot()
-              .scenario.assets.find((asset) => asset.id === assetId)?.sourceUrl;
-          },
+          resolveAsset: resolveWorkspaceAsset,
           ...(currentAudioContext ? { audioContext: currentAudioContext } : {}),
         });
         stage.setDelegate(current);
@@ -623,7 +647,7 @@ export const createStageWebApplication =
           blob: await createProjectArchive({
             scenario: workspace.scenario,
             castPlan: workspace.castPlan,
-            loadBlob: projectStore.loadBlob,
+            loadBlob: resolveWorkspaceAsset,
           }),
           fileName: projectArchiveFileName(workspace.scenario.title),
         };
@@ -648,6 +672,7 @@ export const createStageWebApplication =
       setSimulatorAvailability: wasm.setAvailability,
       resumeAudio,
       async dispose() {
+        removeAudioUnlock();
         webMcp.dispose();
         removeDevice?.();
         unsubscribeRuntime();

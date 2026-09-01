@@ -1549,7 +1549,9 @@ const AssetPanel = ({
         {workspace.scenario.assets.map((asset) => (
           <article className="asset-card" key={asset.id}>
             <div className={`asset-preview ${asset.kind}`}>
-              {asset.kind === "backdrop" ? (
+              {asset.kind === "backdrop" && asset.sourceUrl ? (
+                <img src={asset.sourceUrl} alt="" loading="lazy" />
+              ) : asset.kind === "backdrop" ? (
                 <Image size={25} />
               ) : (
                 <FileAudio size={25} />
@@ -1561,6 +1563,23 @@ const AssetPanel = ({
                 {asset.mimeType} · {(asset.byteSize / 1024).toFixed(1)} KiB
               </span>
               <code>{asset.digest.slice(0, 12)}</code>
+              {(asset.license || asset.sourceUrl) && (
+                <div className="asset-provenance">
+                  {asset.license && (
+                    <span title={asset.license}>{asset.license}</span>
+                  )}
+                  {asset.sourceUrl && (
+                    <a
+                      href={asset.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`${asset.name}の出典ファイルを開く`}
+                    >
+                      <Link2 size={11} /> 出典
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           </article>
         ))}
@@ -1774,7 +1793,7 @@ export const App = ({
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(
-      () => setNotice(undefined),
+      () => setNotice((current) => (current === notice ? undefined : current)),
       notice.tone === "error" ? 7000 : 2600,
     );
     return () => window.clearTimeout(timer);

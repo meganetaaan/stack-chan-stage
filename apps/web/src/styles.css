@@ -1168,6 +1168,12 @@ p {
   background: #f1e7c7;
 }
 
+.asset-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .asset-copy {
   align-content: center;
   padding: 9px;
@@ -1175,6 +1181,32 @@ p {
 
 .asset-copy code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.asset-provenance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.asset-provenance span {
+  min-width: 0;
+}
+
+.asset-provenance a {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  color: #2f706c;
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.asset-provenance a:hover {
+  text-decoration: underline;
 }
 
 .empty-assets {

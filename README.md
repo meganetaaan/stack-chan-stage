@@ -1,5 +1,82 @@
 # Stack-chan Stage
 
+> **Co-direct a robot performance with an AI—through the page, not around it.**
+
+Stack-chan Stage is a browser-native director console where a human and an AI
+share one visible, revisioned workspace for robot theatre. The page exposes 15
+structured WebMCP tools for reading, editing, validating, previewing, and
+playing the same scenario shown in the UI. Everything stays visible.
+
+[Launch the live demo](https://meganetaaan.github.io/stack-chan-stage/) ·
+[View the source](https://github.com/meganetaaan/stack-chan-stage) ·
+[Asset provenance](ATTRIBUTION.md) · [Apache-2.0 license](LICENSE)
+
+![Stack-chan Stage hero flow: WebMCP edits, validates, previews, and plays a robot performance](docs/media/hero-flow.gif)
+
+## WebMCP contest demo
+
+### Why WebMCP
+
+An agent that only sees pixels has to guess which control changes a cue, how
+scene order is represented, and whether an edit is valid. Stack-chan Stage
+instead publishes the page's real domain operations through WebMCP. Tool calls
+use typed inputs and optimistic revisions, then write back to the same timeline
+the human is watching. The human can inspect every change and approve a bounded
+preview before the agent starts the full performance.
+
+The default demo contains 3 scenes, 13 cues, 3 original backdrops, and a
+procedurally generated BGM loop. Its 90-second hero flow is:
+
+1. Read the workspace and current revision.
+2. Revise the dialogue, direction, expression, motion, and backdrop.
+3. Validate the complete scenario.
+4. Preview only the edited cue range.
+5. Wait for human confirmation.
+6. Play all scenes.
+
+### Try the hero flow
+
+Open the [live demo](https://meganetaaan.github.io/stack-chan-stage/) in a fresh
+or private browser window, wait for `WASM READY`, and click the page once to
+unlock audio. Connect a WebMCP-capable browser agent. For local testing in
+Chrome 149 or later, enable `chrome://flags/#enable-webmcp-testing` and relaunch
+Chrome as described in the
+[official Chrome WebMCP guide](https://developer.chrome.com/docs/ai/webmcp).
+
+Send these prompts in order:
+
+```text
+Read the current Stage workspace. In scene-collaboration, update the backdrop to Human-Agent Revision Loop with a slide from the left over 650 ms; set narrator to HAPPY; replace the speech with「WebMCPなら、AIがページの構造を読み、人と同じ舞台へ演出を書き戻せます。」; set its direction to「発見を観客と分かち合うように」; and change the motion to clap. Use expectedRevision correctly after every mutation. Do not preview or play yet.
+```
+
+```text
+Validate the current scenario. Preview only scene-collaboration from cue-collaboration-backdrop through cue-collaboration-motion with audible speech. When the preview ends, summarize any warnings and ask for my confirmation. Do not start the full performance.
+```
+
+After reviewing the preview, reply:
+
+```text
+Looks good. Play all scenes with audible speech, then report the final run status.
+```
+
+### Known limitations
+
+- IndexedDB keeps the last project in that browser profile, so use a fresh or
+  private window to reproduce the default demo.
+- Browser speech voices and quality vary by operating system. A pointer or key
+  gesture is required before BGM can start.
+- Runtime execution currently supports one sequential lane per scene.
+- The hosted demo runs the in-browser WASM simulator. A physical Stack-chan
+  needs the local gateway and an Opus TTS endpoint; physical motion and speaker
+  output are not exercised by automated tests.
+- WebMCP remains an experimental browser feature, so agent integration depends
+  on the browser build and flags in use.
+
+The [Devpost submission draft](docs/submission.md) and
+[2:35 demo video script](docs/demo-video-script.md) follow this same flow.
+
+## プロジェクト概要
+
 Stack-chan Stageは、複数の役と場面を編集し、ブラウザ内のｽﾀｯｸﾁｬﾝまたは実機へ上演する演出コンソールです。
 
 ScenarioとCastから実行時のRunPlanを確定し、Cueの完了イベントを待って次のCueへ進みます。
@@ -65,8 +142,10 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-`npm run check`はformat、型、unit/property/contract/integration test、Simulator assetのハッシュ、production buildを検査します。
-E2EはWASM起動、画面ピクセル、Cue入力検証、Host.Stageの往復、終演、モバイル表示に加え、WebMCPによる台本の取得・追記・推敲とUI反映をChromiumで確認します。
+`npm run check`はformat、型、unit/property/contract/integration testを実行します。
+あわせて、Simulator assetとデモ素材のハッシュ、production buildを検査します。
+E2EはChromium上で、WASM起動から終演までの基本動作とモバイル表示を確認します。
+WebMCPのE2Eでは、workspace取得、共同演出の推敲、検証、Cue範囲のPreview、人の確認、全場面のPlayまでを通します。
 プロジェクトファイルのE2Eでは、演出・配役・素材を書き出した後に現在の内容を変更し、ZIPから同じ状態へ復元できることを確認します。
 
 ## Local Gatewayと実機
@@ -141,4 +220,5 @@ npm run build:stage-wasm-host
 ## ライセンス
 
 本プロジェクトの独自コードは[Apache License 2.0](LICENSE)で公開しています。
+デモ用の背景とBGMの制作方法、変換内容、ライセンスは[`ATTRIBUTION.md`](ATTRIBUTION.md)に記載しています。
 第三者成果物の出典とライセンスは[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)に記載しています。

@@ -1,0 +1,46 @@
+[
+  {
+    "id": "asset-112ad9726dd07c40e653c0b3",
+    "kind": "backdrop",
+    "name": "Open Web Constellation",
+    "mimeType": "image/webp",
+    "byteSize": 58996,
+    "digest": "112ad9726dd07c40e653c0b3905acdf818c85b38f7d1dd84b0c026bfad7a278e",
+    "path": "demo/scene-01a-web-constellation.webp",
+    "sourcePath": "assets/source/webmcp-demo/scene-01a-web-constellation.png",
+    "license": "Apache-2.0 · original Stack-chan Stage asset"
+  },
+  {
+    "id": "asset-098175752ee272ec0455bf6a",
+    "kind": "backdrop",
+    "name": "Human-Agent Revision Loop",
+    "mimeType": "image/webp",
+    "byteSize": 77858,
+    "digest": "098175752ee272ec0455bf6a7f282d0e62ad97a9f6ec593f16287f1f0bb1d935",
+    "path": "demo/scene-04b-collaborative-revision-loop.webp",
+    "sourcePath": "assets/source/webmcp-demo/scene-04b-collaborative-revision-loop.png",
+    "license": "Apache-2.0 · original Stack-chan Stage asset"
+  },
+  {
+    "id": "asset-82e872b655d3c86f88bb07c2",
+    "kind": "backdrop",
+    "name": "Shared Toolbox Finale",
+    "mimeType": "image/webp",
+    "byteSize": 92230,
+    "digest": "82e872b655d3c86f88bb07c28567ac772c55e4f003cf6136b86ec4c71b6bc37c",
+    "path": "demo/scene-05b-shared-toolbox-finale.webp",
+    "sourcePath": "assets/source/webmcp-demo/scene-05b-shared-toolbox-finale.png",
+    "license": "Apache-2.0 · original Stack-chan Stage asset"
+  },
+  {
+    "id": "asset-8928e571a725a5f78bbb57bb",
+    "kind": "music",
+    "name": "WebMCP Night Loop",
+    "mimeType": "audio/wav",
+    "byteSize": 576044,
+    "digest": "8928e571a725a5f78bbb57bb6ea7c414c67e41614da654f7f3530d88ea2406a6",
+    "path": "demo/webmcp-night-loop.wav",
+    "sourcePath": "scripts/generate-demo-bgm.mjs",
+    "license": "Apache-2.0 · original Stack-chan Stage asset"
+  }
+]

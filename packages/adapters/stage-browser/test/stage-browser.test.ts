@@ -109,4 +109,75 @@ describe("Browser Stage adapter", () => {
     await expect(executing).rejects.toMatchObject({ name: "AbortError" });
     expect(cancel).toHaveBeenCalledOnce();
   });
+
+  it("BGMをdecodeしてloop・音量・fadeを適用し停止する", async () => {
+    const root = document.createElement("div");
+    const decoded = {} as AudioBuffer;
+    const source = {
+      buffer: null,
+      loop: false,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+    };
+    const gain = {
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      gain: {
+        value: 0.4,
+        cancelScheduledValues: vi.fn(),
+        setValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+      },
+    };
+    const audioContext = {
+      currentTime: 1.5,
+      destination: {},
+      decodeAudioData: vi.fn(async () => decoded),
+      createBufferSource: vi.fn(() => source),
+      createGain: vi.fn(() => gain),
+    } as unknown as AudioContext;
+    const stage = createBrowserStagePort({
+      root,
+      audioContext,
+      resolveAsset: async () =>
+        ({
+          arrayBuffer: async () =>
+            new TextEncoder().encode("demo music").buffer,
+        }) as Blob,
+    });
+
+    await stage.execute({
+      runId: asRunId("run-music"),
+      cueExecutionId: asCueExecutionId("execution-music-start"),
+      cue: {
+        id: asCueId("cue-music-start"),
+        kind: "music.start",
+        assetId: asAssetId("asset-music"),
+        loop: true,
+        volume: 0.18,
+        fadeInMs: 0,
+      },
+    });
+
+    expect(audioContext.decodeAudioData).toHaveBeenCalledOnce();
+    expect(source.buffer).toBe(decoded);
+    expect(source.loop).toBe(true);
+    expect(source.start).toHaveBeenCalledOnce();
+    expect(gain.gain.setValueAtTime).toHaveBeenCalledWith(0.18, 1.5);
+
+    await stage.execute({
+      runId: asRunId("run-music"),
+      cueExecutionId: asCueExecutionId("execution-music-stop"),
+      cue: {
+        id: asCueId("cue-music-stop"),
+        kind: "music.stop",
+        fadeOutMs: 0,
+      },
+    });
+    expect(source.stop).toHaveBeenCalledOnce();
+    expect(source.disconnect).toHaveBeenCalledOnce();
+    expect(gain.disconnect).toHaveBeenCalledOnce();
+  });
 });
