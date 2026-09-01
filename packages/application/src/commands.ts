@@ -29,6 +29,8 @@ import {
   type ValidationIssue,
 } from "@stackchan-stage/domain";
 
+import type { ProjectAssetBlob } from "./ports";
+
 export type WorkspaceState = Readonly<{
   scenario: Scenario;
   castPlan: CastPlan;
@@ -87,7 +89,14 @@ export type WorkspaceCommand =
         sceneId?: SceneId;
         cast: CastScope;
       }>)
-  | (Revisioned & Readonly<{ type: "scenario.replace"; scenario: Scenario }>);
+  | (Revisioned & Readonly<{ type: "scenario.replace"; scenario: Scenario }>)
+  | (Revisioned &
+      Readonly<{
+        type: "project.replace";
+        scenario: Scenario;
+        castPlan: CastPlan;
+        assetBlobs: readonly ProjectAssetBlob[];
+      }>);
 
 export type CommandSuccess = Readonly<{
   ok: true;
@@ -224,6 +233,15 @@ export const dispatchWorkspaceCommand = (
       scenario = command.scenario;
       changedIds = [scenario.id];
       break;
+    case "project.replace":
+      scenario = command.scenario;
+      castPlan = command.castPlan;
+      changedIds = [
+        scenario.id,
+        "cast:global",
+        ...scenario.assets.map((asset) => asset.id),
+      ];
+      break;
   }
 
   if (edit) {
@@ -264,6 +282,7 @@ export const dispatchWorkspaceCommand = (
 
 export type WorkspaceStore = Readonly<{
   getSnapshot: () => WorkspaceState;
+  whenIdle: () => Promise<void>;
   dispatch: (command: WorkspaceCommand) => Promise<CommandResult>;
   setActors: (actors: readonly Actor[]) => void;
   setRuntime: (runtime: RuntimeState) => void;
@@ -272,21 +291,34 @@ export type WorkspaceStore = Readonly<{
 
 export const createWorkspaceStore = (
   initial: WorkspaceState,
-  persist?: (state: WorkspaceState) => Promise<void>,
+  persist?: (state: WorkspaceState, command: WorkspaceCommand) => Promise<void>,
 ): WorkspaceStore => {
   let state = initial;
+  let commandQueue: Promise<void> = Promise.resolve();
   const listeners = new Set<() => void>();
   const notify = () => listeners.forEach((listener) => listener());
   return {
     getSnapshot: () => state,
-    async dispatch(command) {
-      const result = dispatchWorkspaceCommand(state, command);
-      if (result.ok) {
-        state = result.state;
+    whenIdle: () => commandQueue,
+    dispatch(command) {
+      const operation = commandQueue.then(async (): Promise<CommandResult> => {
+        const result = dispatchWorkspaceCommand(state, command);
+        if (!result.ok) return result;
+        await persist?.(result.state, command);
+        const committedState: WorkspaceState = {
+          ...result.state,
+          actors: state.actors,
+          runtime: state.runtime,
+        };
+        state = committedState;
         notify();
-        await persist?.(state);
-      }
-      return result;
+        return { ...result, state: committedState };
+      });
+      commandQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
     },
     setActors(actors: readonly Actor[]) {
       state = { ...state, actors };

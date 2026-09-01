@@ -93,6 +93,30 @@ describe("Workspace command dispatcher", () => {
     expect(result.state).toBe(state);
   });
 
+  it("Project全体をScenario・Cast・素材Blobの組として置換する", () => {
+    const state = initialState();
+    const scenario = { ...state.scenario, title: "読み込んだ演目" };
+    const castPlan = { global: { assignments: {} }, scenes: {} };
+    const result = dispatchWorkspaceCommand(state, {
+      type: "project.replace",
+      expectedRevision: 7,
+      scenario,
+      castPlan,
+      assetBlobs: [
+        {
+          id: state.scenario.assets[0]!.id,
+          blob: new Blob(["asset"], { type: "image/webp" }),
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      newRevision: 8,
+      state: { scenario, castPlan },
+    });
+  });
+
   it("UI/WebMCP共通storeが成功時だけpersist・通知する", async () => {
     const persist = vi.fn(async () => undefined);
     const listener = vi.fn();
@@ -110,5 +134,32 @@ describe("Workspace command dispatcher", () => {
     expect(result.ok).toBe(true);
     expect(listener).toHaveBeenCalledOnce();
     expect(persist).toHaveBeenCalledOnce();
+  });
+
+  it("persist失敗時はstateを公開せず、後続commandを処理できる", async () => {
+    const persist = vi
+      .fn<(state: WorkspaceState) => Promise<void>>()
+      .mockRejectedValueOnce(new Error("quota exceeded"))
+      .mockResolvedValue(undefined);
+    const listener = vi.fn();
+    const store = createWorkspaceStore(initialState(), persist);
+    store.subscribe(listener);
+    const command = {
+      type: "scene.update" as const,
+      expectedRevision: 7,
+      sceneId: initialState().scenario.scenes[0]!.id,
+      title: "永続化後に公開",
+    };
+
+    await expect(store.dispatch(command)).rejects.toThrow("quota exceeded");
+    expect(store.getSnapshot().revision).toBe(7);
+    expect(listener).not.toHaveBeenCalled();
+
+    await expect(store.dispatch(command)).resolves.toMatchObject({ ok: true });
+    expect(store.getSnapshot()).toMatchObject({
+      revision: 8,
+      scenario: { scenes: [{ title: "永続化後に公開" }] },
+    });
+    expect(listener).toHaveBeenCalledOnce();
   });
 });

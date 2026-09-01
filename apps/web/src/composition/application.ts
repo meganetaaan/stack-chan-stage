@@ -2,6 +2,7 @@ import {
   createRuntimeCoordinator,
   createWorkspaceStore,
   type AudioPreparationPort,
+  type CommandResult,
   type ProjectSnapshot,
   type RuntimeCoordinator,
   type StagePort,
@@ -58,6 +59,12 @@ import {
   type PreviewSpeechMode,
 } from "./preview-speech-mode";
 import { waitForRunEnd } from "./wait-for-run-end";
+import {
+  createProjectArchive,
+  projectArchiveFileName,
+  readProjectArchive,
+  type PreparedProjectImport,
+} from "../features/project/project-archive";
 
 const gatewaySettingsSchema = z
   .object({
@@ -101,6 +108,9 @@ export type PerformanceResult =
     }>
   | Readonly<{ ok: false; issues: readonly ValidationIssue[] }>;
 
+export type ProjectImportCandidate = PreparedProjectImport &
+  Readonly<{ baseRevision: number }>;
+
 export type StageWebApplication = Readonly<{
   store: WorkspaceStore;
   stageBridge: HostStageBridge;
@@ -115,6 +125,9 @@ export type StageWebApplication = Readonly<{
     kind: AssetKind,
     license?: string,
   ) => Promise<AssetMetadata>;
+  exportProjectFile: () => Promise<Readonly<{ blob: Blob; fileName: string }>>;
+  prepareProjectFile: (file: File) => Promise<ProjectImportCandidate>;
+  replaceProject: (project: ProjectImportCandidate) => Promise<CommandResult>;
   setSimulatorAvailability: (availability: "online" | "offline") => void;
   resumeAudio: () => Promise<void>;
   dispose: () => Promise<void>;
@@ -200,13 +213,16 @@ export const createStageWebApplication =
 
     const persist = async (
       state: ReturnType<WorkspaceStore["getSnapshot"]>,
+      command: Parameters<WorkspaceStore["dispatch"]>[0],
     ) => {
       const snapshot: ProjectSnapshot = {
         scenario: state.scenario,
         castPlan: state.castPlan,
         revision: state.revision,
       };
-      await projectStore.save(snapshot);
+      if (command.type === "project.replace")
+        await projectStore.replace(snapshot, command.assetBlobs);
+      else await projectStore.save(snapshot);
     };
     const store = createWorkspaceStore(
       {
@@ -599,6 +615,35 @@ export const createStageWebApplication =
       isTtsEndpointConfigured: () => ttsEndpoint !== undefined,
       async importFileAsset(file, kind, license) {
         return importBlob(file, file.name, kind, undefined, license);
+      },
+      async exportProjectFile() {
+        await store.whenIdle();
+        const workspace = store.getSnapshot();
+        return {
+          blob: await createProjectArchive({
+            scenario: workspace.scenario,
+            castPlan: workspace.castPlan,
+            loadBlob: projectStore.loadBlob,
+          }),
+          fileName: projectArchiveFileName(workspace.scenario.title),
+        };
+      },
+      async prepareProjectFile(file) {
+        await store.whenIdle();
+        const workspace = store.getSnapshot();
+        return {
+          ...(await readProjectArchive(file, workspace.actors)),
+          baseRevision: workspace.revision,
+        };
+      },
+      replaceProject(project) {
+        return store.dispatch({
+          type: "project.replace",
+          expectedRevision: project.baseRevision,
+          scenario: project.scenario,
+          castPlan: project.castPlan,
+          assetBlobs: project.assetBlobs,
+        });
       },
       setSimulatorAvailability: wasm.setAvailability,
       resumeAudio,

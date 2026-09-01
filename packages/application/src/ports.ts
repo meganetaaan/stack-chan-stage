@@ -76,11 +76,20 @@ export type ProjectSnapshot = Readonly<{
   revision: number;
 }>;
 
+export type ProjectAssetBlob = Readonly<{
+  id: AssetId;
+  blob: Blob;
+}>;
+
 export type ProjectStorePort = Readonly<{
   load: () => Promise<ProjectSnapshot | undefined>;
   save: (snapshot: ProjectSnapshot) => Promise<void>;
   saveBlob: (assetId: AssetId, blob: Blob) => Promise<void>;
   loadBlob: (assetId: AssetId) => Promise<Blob | undefined>;
+  replace: (
+    snapshot: ProjectSnapshot,
+    assets: readonly ProjectAssetBlob[],
+  ) => Promise<void>;
 }>;
 
 export type RuntimeObserver = (state: RuntimeState) => void;

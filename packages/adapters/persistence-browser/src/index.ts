@@ -63,6 +63,18 @@ export const createIndexedDbProjectStore = (
     async loadBlob(assetId) {
       return (await database).get("blobs", assetId);
     },
+    async replace(snapshot, assets) {
+      const transaction = (await database).transaction(
+        ["project", "blobs"],
+        "readwrite",
+      );
+      const project = transaction.objectStore("project");
+      const blobs = transaction.objectStore("blobs");
+      await blobs.clear();
+      for (const asset of assets) await blobs.put(asset.blob, asset.id);
+      await project.put(snapshot, "current");
+      await transaction.done;
+    },
     async close() {
       (await database).close();
     },

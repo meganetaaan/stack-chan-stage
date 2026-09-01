@@ -14,6 +14,7 @@ ScenarioとCastから実行時のRunPlanを確定し、Cueの完了イベント�
 - 実機Actorは、Local GatewayのControl経路とMedia経路を分離して接続します。
 - WebMCPは、取得、検証、Scene/Cue編集、素材取込、Cast変更、Preview、Play、Stopの15ツールを登録します。
 - Scenario、Cast、素材、生成音声をIndexedDBへ保存します。
+- 演出、配役、素材本体を`.stackchan-stage.zip`として書き出し、別のブラウザへ読み込めます。
 
 ## 構成
 
@@ -66,6 +67,7 @@ npm run test:e2e
 
 `npm run check`はformat、型、unit/property/contract/integration test、Simulator assetのハッシュ、production buildを検査します。
 E2EはWASM起動、画面ピクセル、Cue入力検証、Host.Stageの往復、終演、モバイル表示に加え、WebMCPによる台本の取得・追記・推敲とUI反映をChromiumで確認します。
+プロジェクトファイルのE2Eでは、演出・配役・素材を書き出した後に現在の内容を変更し、ZIPから同じ状態へ復元できることを確認します。
 
 ## Local Gatewayと実機
 

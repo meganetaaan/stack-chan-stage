@@ -17,6 +17,7 @@
     "@stackchan-stage/stage-browser": "0.1.0",
     "@stackchan-stage/tts": "0.1.0",
     "@stackchan-stage/webmcp": "0.1.0",
+    "fflate": "^0.8.2",
     "lucide-react": "^0.542.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

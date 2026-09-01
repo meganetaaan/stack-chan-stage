@@ -890,6 +890,7 @@ UIまたは別tool callが先に変更していた場合は、変更を適用せ
 project.stackchan-stage.zip
 ├── manifest.json
 ├── scenario.json
+├── cast.json
 └── assets/
     ├── <sha256>.png
     ├── <sha256>.webp
@@ -902,7 +903,14 @@ project.stackchan-stage.zip
 {
   "format": "stackchan-stage-project",
   "schemaVersion": 1,
-  "scenario": "scenario.json"
+  "scenario": "scenario.json",
+  "cast": "cast.json",
+  "assets": [
+    {
+      "id": "asset-<digest prefix>",
+      "path": "assets/<sha256>.png"
+    }
+  ]
 }
 ```
 
@@ -910,7 +918,7 @@ project.stackchan-stage.zip
 
 - Scenario packageには環境固有のActor IDを含めない。
 - CastPlanはworkspace-local dataとしてIndexedDBへ保存できる。
-- export時はCast presetを含めるか選択可能にするが、既定では除外する。
+- project exportにはCastPlanを含める。import先にActorが存在しない割当は保持し、未接続として警告する。
 - Actor registryは常にRuntime environmentから再構築する。
 
 ### 15.3 Asset

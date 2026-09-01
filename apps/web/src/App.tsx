@@ -5,9 +5,11 @@ import {
   Cable,
   ChevronRight,
   Clapperboard,
+  Download,
   Expand,
   FileAudio,
   Files,
+  FolderOpen,
   GripVertical,
   Image,
   Layers3,
@@ -45,7 +47,10 @@ import {
   resolveSpeechSynthesisVoice,
 } from "@stackchan-stage/tts";
 
-import type { StageWebApplication } from "./composition/application";
+import type {
+  ProjectImportCandidate,
+  StageWebApplication,
+} from "./composition/application";
 import { CueEditor } from "./features/editor/CueEditor";
 import {
   CueKindIcon,
@@ -66,6 +71,7 @@ import {
   SimulatorView,
   type SimulatorPhase,
 } from "./features/performance/SimulatorView";
+import { ProjectArchiveError } from "./features/project/project-archive";
 import { useWorkspace } from "./hooks/use-workspace";
 
 type WorkspaceView = "editor" | "cast" | "assets" | "performance";
@@ -74,6 +80,7 @@ type Notice = Readonly<{
   message: string;
   issues?: readonly ValidationIssue[];
 }>;
+type ProjectFilePhase = "opening" | "exporting" | "importing";
 
 const viewItems: ReadonlyArray<{
   id: WorkspaceView;
@@ -112,6 +119,114 @@ const IconButton = ({
     {children}
   </button>
 );
+
+const formatBytes = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+};
+
+const ProjectImportDialog = ({
+  project,
+  importing,
+  onCancel,
+  onConfirm,
+}: Readonly<{
+  project: ProjectImportCandidate;
+  importing: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}>) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    dialog.showModal();
+    return () => dialog.close();
+  }, []);
+  const { summary } = project;
+  return (
+    <dialog
+      className="project-import-dialog"
+      ref={dialogRef}
+      aria-labelledby="project-import-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!importing) onCancel();
+      }}
+    >
+      <article>
+        <header>
+          <span className="eyebrow">OPEN PROJECT</span>
+          <h2 id="project-import-title">プロジェクトを読み込む</h2>
+        </header>
+        <strong className="project-import-name">{summary.title}</strong>
+        <dl className="project-import-summary">
+          <div>
+            <dt>場面</dt>
+            <dd>{summary.sceneCount}</dd>
+          </div>
+          <div>
+            <dt>コマンド</dt>
+            <dd>{summary.cueCount}</dd>
+          </div>
+          <div>
+            <dt>役</dt>
+            <dd>{summary.roleCount}</dd>
+          </div>
+          <div>
+            <dt>配役</dt>
+            <dd>{summary.castAssignmentCount}</dd>
+          </div>
+          <div>
+            <dt>素材</dt>
+            <dd>{summary.assetCount}</dd>
+          </div>
+          <div>
+            <dt>容量</dt>
+            <dd>{formatBytes(summary.assetBytes)}</dd>
+          </div>
+        </dl>
+        {!summary.castIncluded && (
+          <p className="project-import-warning" role="status">
+            このファイルに配役は含まれていません。すべて未配役になります。
+          </p>
+        )}
+        {summary.unresolvedActorIds.length > 0 && (
+          <div className="project-import-warning" role="status">
+            <strong>未接続のActorがあります</strong>
+            <span>{summary.unresolvedActorIds.join("、")}</span>
+          </div>
+        )}
+        <p className="project-import-replace-note">
+          現在の演出・配役・素材を、このプロジェクトで置き換えます。
+        </p>
+        <footer>
+          <button
+            className="button secondary"
+            onClick={onCancel}
+            disabled={importing}
+            autoFocus
+          >
+            キャンセル
+          </button>
+          <button
+            className="button primary"
+            onClick={onConfirm}
+            disabled={importing}
+          >
+            {importing ? (
+              <LoaderCircle className="spin" size={15} />
+            ) : (
+              <FolderOpen size={15} />
+            )}
+            {importing ? "読込中" : "置き換えて開く"}
+          </button>
+        </footer>
+      </article>
+    </dialog>
+  );
+};
 
 const ScriptLine = ({
   className,
@@ -978,6 +1093,9 @@ const CastPanel = ({
       <div className="cast-grid">
         {workspace.scenario.roles.map((role) => {
           const assigned = ownRecordValue(scoped.assignments, role.id) ?? "";
+          const assignedActorAvailable = workspace.actors.some(
+            (actor) => actor.id === assigned,
+          );
           const roleVoice = role.voice ?? {
             provider: "browser",
             voiceId: DEFAULT_BROWSER_VOICE_ID,
@@ -1013,6 +1131,11 @@ const CastPanel = ({
                     }}
                   >
                     <option value="">未配役</option>
+                    {assigned && !assignedActorAvailable && (
+                      <option value={assigned} disabled>
+                        未接続: {assigned}
+                      </option>
+                    )}
                     {workspace.actors.map((actor) => (
                       <option
                         value={actor.id}
@@ -1062,6 +1185,14 @@ const CastPanel = ({
           }}
         >
           <option value="">なし</option>
+          {scoped.standInActorId &&
+            !workspace.actors.some(
+              (actor) => actor.id === scoped.standInActorId,
+            ) && (
+              <option value={scoped.standInActorId} disabled>
+                未接続: {scoped.standInActorId}
+              </option>
+            )}
           {workspace.actors.map((actor) => (
             <option value={actor.id} key={actor.id}>
               {actor.name}
@@ -1616,6 +1747,9 @@ export const App = ({
   const [simulatorPhase, setSimulatorPhase] =
     useState<SimulatorPhase>("loading");
   const [notice, setNotice] = useState<Notice>();
+  const projectFileInputRef = useRef<HTMLInputElement>(null);
+  const [projectFilePhase, setProjectFilePhase] = useState<ProjectFilePhase>();
+  const [projectImport, setProjectImport] = useState<ProjectImportCandidate>();
   const selectedScene =
     workspace.scenario.scenes.find((scene) => scene.id === selectedSceneId) ??
     workspace.scenario.scenes[0];
@@ -1623,6 +1757,13 @@ export const App = ({
     workspace.runtime.status === "playing"
       ? workspace.runtime.active.cue.id
       : undefined;
+  const projectImportUnavailable = [
+    "preparing",
+    "ready",
+    "playing",
+    "buffering",
+    "stopping",
+  ].includes(workspace.runtime.status);
 
   useEffect(() => {
     if (
@@ -1661,6 +1802,93 @@ export const App = ({
         message: result.message,
         issues: result.validationIssues,
       });
+  };
+
+  const projectFileError = (caught: unknown) => {
+    if (caught instanceof ProjectArchiveError)
+      return {
+        tone: "error" as const,
+        message: caught.message,
+        ...(caught.issues.length > 0 ? { issues: caught.issues } : {}),
+      };
+    return {
+      tone: "error" as const,
+      message:
+        caught instanceof Error
+          ? caught.message
+          : "プロジェクトファイルを処理できませんでした",
+    };
+  };
+
+  const exportProject = async () => {
+    setProjectFilePhase("exporting");
+    try {
+      const exported = await application.exportProjectFile();
+      const url = URL.createObjectURL(exported.blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = exported.fileName;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setNotice({
+        tone: "success",
+        message: `「${workspace.scenario.title}」を書き出しました`,
+      });
+    } catch (caught) {
+      setNotice(projectFileError(caught));
+    } finally {
+      setProjectFilePhase(undefined);
+    }
+  };
+
+  const prepareProject = async (file: File) => {
+    setProjectFilePhase("opening");
+    try {
+      setProjectImport(await application.prepareProjectFile(file));
+    } catch (caught) {
+      setProjectImport(undefined);
+      setNotice(projectFileError(caught));
+    } finally {
+      setProjectFilePhase(undefined);
+    }
+  };
+
+  const confirmProjectImport = async () => {
+    if (!projectImport) return;
+    setProjectFilePhase("importing");
+    try {
+      const result = await application.replaceProject(projectImport);
+      if (!result.ok) {
+        setProjectImport(undefined);
+        setNotice({
+          tone: "error",
+          message:
+            result.code === "revision_conflict"
+              ? "確認中にプロジェクトが変更されました。ファイルをもう一度開いてください"
+              : result.message,
+          issues: result.validationIssues,
+        });
+        return;
+      }
+      setSelectedSceneId(projectImport.scenario.scenes[0]!.id);
+      setView("editor");
+      setProjectImport(undefined);
+      setNotice({
+        tone:
+          projectImport.summary.unresolvedActorIds.length > 0
+            ? "info"
+            : "success",
+        message:
+          projectImport.summary.unresolvedActorIds.length > 0
+            ? `プロジェクトを読み込みました。未接続のActorが${projectImport.summary.unresolvedActorIds.length}件あります`
+            : `「${projectImport.scenario.title}」を読み込みました`,
+      });
+    } catch (caught) {
+      setProjectImport(undefined);
+      setNotice(projectFileError(caught));
+    } finally {
+      setProjectFilePhase(undefined);
+    }
   };
 
   if (!selectedScene)
@@ -1725,19 +1953,58 @@ export const App = ({
             }}
           />
         </div>
-        <span className="project-count">
-          <Clapperboard size={14} /> {workspace.scenario.scenes.length} 場面 ·{" "}
-          {workspace.scenario.scenes.reduce(
-            (count, scene) =>
-              count +
-              scene.lanes.reduce(
-                (laneCount, lane) => laneCount + lane.cues.length,
-                0,
-              ),
-            0,
-          )}{" "}
-          キュー
-        </span>
+        <div className="project-meta">
+          <span className="project-count">
+            <Clapperboard size={14} /> {workspace.scenario.scenes.length} 場面 ·{" "}
+            {workspace.scenario.scenes.reduce(
+              (count, scene) =>
+                count +
+                scene.lanes.reduce(
+                  (laneCount, lane) => laneCount + lane.cues.length,
+                  0,
+                ),
+              0,
+            )}{" "}
+            キュー
+          </span>
+          <div className="project-file-actions">
+            <input
+              ref={projectFileInputRef}
+              className="visually-hidden"
+              type="file"
+              accept=".stackchan-stage.zip,.zip,application/zip"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void prepareProject(file);
+              }}
+            />
+            <IconButton
+              label="プロジェクトを開く"
+              onClick={() => projectFileInputRef.current?.click()}
+              disabled={
+                projectImportUnavailable || projectFilePhase !== undefined
+              }
+            >
+              {projectFilePhase === "opening" ? (
+                <LoaderCircle className="spin" size={15} />
+              ) : (
+                <FolderOpen size={15} />
+              )}
+            </IconButton>
+            <IconButton
+              label="プロジェクトを書き出す"
+              onClick={() => void exportProject()}
+              disabled={projectFilePhase !== undefined}
+            >
+              {projectFilePhase === "exporting" ? (
+                <LoaderCircle className="spin" size={15} />
+              ) : (
+                <Download size={15} />
+              )}
+            </IconButton>
+          </div>
+        </div>
       </div>
 
       <main className="workspace-layout">
@@ -1835,6 +2102,14 @@ export const App = ({
             <X size={14} />
           </IconButton>
         </aside>
+      )}
+      {projectImport && (
+        <ProjectImportDialog
+          project={projectImport}
+          importing={projectFilePhase === "importing"}
+          onCancel={() => setProjectImport(undefined)}
+          onConfirm={() => void confirmProjectImport()}
+        />
       )}
     </div>
   );

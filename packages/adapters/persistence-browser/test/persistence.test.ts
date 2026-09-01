@@ -78,4 +78,62 @@ describe("IndexedDB persistence", () => {
     expect(await cache.entries()).toHaveLength(1);
     await cache.close();
   });
+
+  it("Projectと素材Blobを一つのtransactionで置換する", async () => {
+    const store = createIndexedDbProjectStore(`replace-${crypto.randomUUID()}`);
+    const original = {
+      scenario: {
+        schemaVersion: 1 as const,
+        id: asScenarioId("scenario-original"),
+        title: "元の演目",
+        roles: [],
+        scenes: [
+          {
+            id: asSceneId("scene-original"),
+            title: "元の場面",
+            lanes: [
+              {
+                id: asLaneId("lane-original"),
+                name: "本線",
+                cues: [],
+              },
+            ] as const,
+          },
+        ],
+        assets: [],
+      },
+      castPlan: emptyCastPlan(),
+      revision: 1,
+    };
+    await store.save(original);
+    await store.saveBlob(
+      asAssetId("asset-old"),
+      new Blob(["old"], { type: "image/png" }),
+    );
+    const replacement = {
+      ...original,
+      scenario: {
+        ...original.scenario,
+        id: asScenarioId("scenario-replacement"),
+        title: "新しい演目",
+      },
+      revision: 2,
+    };
+
+    await store.replace(replacement, [
+      {
+        id: asAssetId("asset-new"),
+        blob: new Blob(["new"], { type: "image/png" }),
+      },
+    ]);
+
+    await expect(store.load()).resolves.toEqual(replacement);
+    await expect(
+      store.loadBlob(asAssetId("asset-old")),
+    ).resolves.toBeUndefined();
+    expect(await (await store.loadBlob(asAssetId("asset-new")))?.text()).toBe(
+      "new",
+    );
+    await store.close();
+  });
 });

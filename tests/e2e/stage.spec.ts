@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { expect, test, type Page } from "@playwright/test";
 import { z } from "zod";
 
@@ -152,6 +154,7 @@ const countBrightMouthPixels = (page: Page) =>
     });
 
 test("キューを検証して編集し、WASM Actorで上演できる", async ({ page }) => {
+  test.setTimeout(90_000);
   await installSpeechSynthesisHarness(page);
   const browserErrors = captureBrowserErrors(page);
   await page.goto("/");
@@ -281,6 +284,114 @@ test("キューを検証して編集し、WASM Actorで上演できる", async (
   expect(browserErrors).toEqual([]);
 });
 
+test("演出・配役・素材をプロジェクトZIPで書き出して読み戻せる", async ({
+  page,
+}) => {
+  await installWebMcpHarness(page);
+  const browserErrors = captureBrowserErrors(page);
+  await page.goto("/");
+  await waitForSimulator(page);
+
+  const title = page.getByRole("textbox", { name: "演目名" });
+  await title.fill("WebMCP プロジェクト");
+  await title.press("Tab");
+
+  await page.getByRole("button", { name: "素材" }).click();
+  await page.locator(".asset-panel input[type='file']").setInputFiles({
+    name: "archive-backdrop.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(page.locator(".asset-card")).toContainText(
+    "archive-backdrop.png",
+  );
+
+  await expect(
+    callWebMcp(page, "stage.cast.set", {
+      expectedRevision: 2,
+      scope: "global",
+      cast: {
+        assignments: {
+          narrator: "actor-away",
+          guest: "wasm-actor",
+        },
+      },
+    }),
+  ).resolves.toMatchObject({ ok: true, newRevision: 3 });
+  await expect(
+    callWebMcp(page, "stage.cue.create", {
+      expectedRevision: 3,
+      sceneId: "scene-opening",
+      laneId: "lane-opening",
+      cue: {
+        id: "cue-project-archive",
+        kind: "speech",
+        roleId: "narrator",
+        text: "ファイルから復元されるセリフです。",
+      },
+    }),
+  ).resolves.toMatchObject({ ok: true, newRevision: 4 });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "プロジェクトを書き出す" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(
+    "WebMCP プロジェクト.stackchan-stage.zip",
+  );
+  const downloadPath = await download.path();
+  if (!downloadPath) throw new Error("project download path is unavailable");
+  const archive = await readFile(downloadPath);
+
+  await title.fill("置換前の一時タイトル");
+  await title.press("Tab");
+  await expect(title).toHaveValue("置換前の一時タイトル");
+
+  await page.locator(".project-file-actions input[type='file']").setInputFiles({
+    name: "restored.stackchan-stage.zip",
+    mimeType: "application/zip",
+    buffer: archive,
+  });
+  const dialog = page.getByRole("dialog", { name: "プロジェクトを読み込む" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("WebMCP プロジェクト");
+  await expect(dialog).toContainText("未接続のActorがあります");
+  await expect(dialog).toContainText("actor-away");
+  await dialog.getByRole("button", { name: "置き換えて開く" }).click();
+
+  await expect(title).toHaveValue("WebMCP プロジェクト");
+  await expect(
+    page.locator("[data-cue-id='cue-project-archive']"),
+  ).toContainText("ファイルから復元されるセリフです。");
+  await page.getByRole("button", { name: "素材" }).click();
+  await expect(page.locator(".asset-card")).toContainText(
+    "archive-backdrop.png",
+  );
+  await page.getByRole("button", { name: "配役" }).click();
+  await expect(
+    page.getByRole("combobox", { name: "語り手のActor" }),
+  ).toHaveValue("actor-away");
+  await expect(
+    page
+      .getByRole("combobox", { name: "語り手のActor" })
+      .getByRole("option", { name: "未接続: actor-away" }),
+  ).toBeAttached();
+  const projectInput = page.locator(".project-file-actions input[type='file']");
+  const invalidProject = {
+    name: "invalid.stackchan-stage.zip",
+    mimeType: "application/zip",
+    buffer: Buffer.from("not a zip"),
+  };
+  await projectInput.setInputFiles(invalidProject);
+  await expect(page.getByRole("alert")).toContainText(
+    "プロジェクトファイルを展開できません",
+  );
+  await expect(title).toHaveValue("WebMCP プロジェクト");
+  expect(browserErrors).toEqual([]);
+});
+
 test.describe("タッチ操作", () => {
   test.use({ hasTouch: true });
 
@@ -291,6 +402,37 @@ test.describe("タッチ操作", () => {
     const browserErrors = captureBrowserErrors(page);
     await page.goto("/");
     await waitForSimulator(page);
+
+    await expect(
+      page.getByRole("button", { name: "プロジェクトを開く" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "プロジェクトを書き出す" }),
+    ).toBeVisible();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "プロジェクトを書き出す" }).click();
+    const download = await downloadPromise;
+    const downloadPath = await download.path();
+    if (!downloadPath)
+      throw new Error("mobile project download path is unavailable");
+    await page
+      .locator(".project-file-actions input[type='file']")
+      .setInputFiles({
+        name: "mobile.stackchan-stage.zip",
+        mimeType: "application/zip",
+        buffer: await readFile(downloadPath),
+      });
+    const projectDialog = page.getByRole("dialog", {
+      name: "プロジェクトを読み込む",
+    });
+    await expect(projectDialog).toBeVisible();
+    const dialogBounds = await projectDialog.boundingBox();
+    if (!dialogBounds) throw new Error("project dialog bounds are unavailable");
+    expect(dialogBounds.x).toBeGreaterThanOrEqual(0);
+    expect(dialogBounds.y).toBeGreaterThanOrEqual(0);
+    expect(dialogBounds.x + dialogBounds.width).toBeLessThanOrEqual(390);
+    expect(dialogBounds.y + dialogBounds.height).toBeLessThanOrEqual(844);
+    await projectDialog.getByRole("button", { name: "キャンセル" }).click();
 
     await expect(page.locator(".cue-script-text").nth(1)).toContainText(
       "語り手「ようこそ、スタックチャン・ステージへ。」",
