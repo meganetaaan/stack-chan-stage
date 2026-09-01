@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   asAssetId,
+  asCueExecutionId,
+  asCueId,
   asRunId,
   compileRun,
   type ActorId,
@@ -21,6 +23,16 @@ import {
   type AudioPreparationPort,
   type StagePort,
 } from "../src";
+
+const deferred = <Value>() => {
+  let resolvePromise: (value: Value) => void = () => {
+    throw new Error("deferred promise is not initialized");
+  };
+  const promise = new Promise<Value>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+};
 
 class EventQueue implements AsyncIterable<ActorEvent> {
   private values: ActorEvent[] = [];
@@ -72,6 +84,38 @@ const planWithOnly = (
   const cue = plan.cues.find((entry) => entry.cue.kind === kind);
   if (!cue) throw new Error(`Cue ${kind} not found`);
   return { ...plan, cues: [cue], speech: cue.speech ? [cue.speech] : [] };
+};
+
+const planWithSpeechCount = (count: number): RunPlan => {
+  const plan = planFixture();
+  const base = plan.cues.find(
+    (entry) => entry.cue.kind === "speech" && entry.speech !== undefined,
+  );
+  if (!base?.speech || base.cue.kind !== "speech")
+    throw new Error("Speech Cue not found");
+  const baseCue = base.cue;
+  const baseSpeech = base.speech;
+  const cues = Array.from({ length: count }, (_, index) => {
+    const cueId = asCueId(`cue-speech-${index}`);
+    const executionId = asCueExecutionId(`execution-speech-${index}`);
+    return {
+      ...base,
+      cue: {
+        ...baseCue,
+        id: cueId,
+        text: `Speech ${index}`,
+      },
+      executionId,
+      speech: {
+        ...baseSpeech,
+        cueId,
+        executionId,
+        fingerprint: `fingerprint-speech-${index}`,
+        text: `Speech ${index}`,
+      },
+    };
+  });
+  return { ...plan, cues, speech: cues.map((cue) => cue.speech) };
 };
 
 const harness = () => {
@@ -174,6 +218,151 @@ describe("Runtime coordinator", () => {
       failure: { code: "audio_prepare_failed", message: "TTS unavailable" },
     });
     coordinator.dispose();
+  });
+
+  it("最低限の音声が揃った時点でReadyにし、残りはbackgroundで準備する", async () => {
+    const ports = harness();
+    const plan = planWithSpeechCount(2);
+    const background =
+      deferred<Awaited<ReturnType<AudioPreparationPort["prepare"]>>>();
+    const originalPrepare = ports.audio.prepare;
+    const audio: AudioPreparationPort = {
+      ...ports.audio,
+      prepare: vi.fn(async (request, signal) => {
+        if (request.fingerprint === "fingerprint-speech-0")
+          return originalPrepare(request, signal);
+        return background.promise;
+      }),
+    };
+    const coordinator = createRuntimeCoordinator({ ...ports, audio });
+
+    try {
+      await coordinator.prepare(plan);
+      expect(coordinator.getState()).toMatchObject({
+        status: "ready",
+        preparedAudio: ["fingerprint-speech-0"],
+      });
+      expect(audio.prepare).toHaveBeenCalledTimes(2);
+
+      const second = plan.speech[1];
+      if (!second) throw new Error("expected second speech");
+      background.resolve(await originalPrepare(second));
+      await vi.waitFor(() =>
+        expect(coordinator.getState()).toMatchObject({
+          status: "ready",
+          preparedAudio: ["fingerprint-speech-0", "fingerprint-speech-1"],
+        }),
+      );
+    } finally {
+      coordinator.dispose();
+      ports.events.close();
+    }
+  });
+
+  it("停止したRunのbackground音声結果を現在の状態へ混入させない", async () => {
+    const ports = harness();
+    const plan = planWithSpeechCount(2);
+    const background =
+      deferred<Awaited<ReturnType<AudioPreparationPort["prepare"]>>>();
+    const originalPrepare = ports.audio.prepare;
+    const audio: AudioPreparationPort = {
+      ...ports.audio,
+      prepare: vi.fn(async (request, signal) => {
+        if (request.fingerprint === "fingerprint-speech-0")
+          return originalPrepare(request, signal);
+        return background.promise;
+      }),
+    };
+    const coordinator = createRuntimeCoordinator({ ...ports, audio });
+
+    try {
+      await coordinator.prepare(plan);
+      await coordinator.stop();
+      expect(coordinator.getState().status).toBe("idle");
+
+      const second = plan.speech[1];
+      if (!second) throw new Error("expected second speech");
+      background.resolve({
+        id: asAssetId("audio-stale"),
+        fingerprint: second.fingerprint,
+        mimeType: "audio/ogg",
+        byteSize: second.estimatedBytes,
+      });
+      await background.promise;
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+      expect(coordinator.getState().status).toBe("idle");
+      expect(coordinator.getPreparedAudio(second.fingerprint)).toBeUndefined();
+    } finally {
+      coordinator.dispose();
+      ports.events.close();
+    }
+  });
+
+  it("長いScenarioで再生済み音声の枠を次のSpeech Cueで補充する", async () => {
+    const ports = harness();
+    const coordinator = createRuntimeCoordinator(ports);
+    const plan = planWithSpeechCount(5);
+    const statuses: string[] = [];
+    const preparedCounts: number[] = [];
+    const unsubscribe = coordinator.subscribe((state) => {
+      statuses.push(state.status);
+      if (state.status !== "idle")
+        preparedCounts.push(state.preparedAudio.length);
+    });
+
+    try {
+      await coordinator.prepare(plan);
+      expect(ports.audio.prepare).toHaveBeenCalledTimes(3);
+      const ready = coordinator.getState();
+      expect(ready.status).toBe("ready");
+      expect(
+        new Set(ready.status === "ready" ? ready.preparedAudio : []),
+      ).toEqual(
+        new Set([
+          "fingerprint-speech-0",
+          "fingerprint-speech-1",
+          "fingerprint-speech-2",
+        ]),
+      );
+      expect(
+        coordinator.getPreparedAudio("fingerprint-speech-0")?.fingerprint,
+      ).toBe("fingerprint-speech-0");
+
+      await coordinator.play();
+      for (let index = 0; index < plan.cues.length; index += 1) {
+        const state = coordinator.getState();
+        if (state.status !== "playing")
+          throw new Error(`expected playing, got ${state.status}`);
+        if (!state.active.actorId) throw new Error("Speech Cue has no Actor");
+        ports.events.emit({
+          type: "cue.completed",
+          actorId: state.active.actorId,
+          executionId: state.active.executionId,
+        });
+        await vi.waitFor(() => {
+          const next = coordinator.getState();
+          if (index === plan.cues.length - 1)
+            expect(next.status).toBe("completed");
+          else
+            expect(next.status === "playing" ? next.cursor : undefined).toBe(
+              index + 1,
+            );
+        });
+      }
+
+      expect(ports.audio.prepare).toHaveBeenCalledTimes(5);
+      expect(statuses).not.toContain("buffering");
+      expect(Math.max(...preparedCounts)).toBeLessThanOrEqual(3);
+      for (const speech of plan.speech)
+        expect(
+          coordinator.getPreparedAudio(speech.fingerprint),
+        ).toBeUndefined();
+    } finally {
+      unsubscribe();
+      coordinator.dispose();
+      ports.events.close();
+    }
   });
 
   it("間を置くタイマー満了時に次へ進みRunを終了する", async () => {

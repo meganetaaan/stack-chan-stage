@@ -1,5 +1,6 @@
 import {
   reduceRuntime,
+  type PlannedSpeech,
   type RunPlan,
   type RuntimeEffect,
   type RuntimeEvent,
@@ -15,12 +16,14 @@ import type {
   ActorEvent,
   ActorPort,
   AudioPreparationPort,
+  PreparedAudio,
   RuntimeObserver,
   StagePort,
 } from "./ports";
 
 export type RuntimeCoordinator = Readonly<{
   getState: () => RuntimeState;
+  getPreparedAudio: (fingerprint: string) => PreparedAudio | undefined;
   prepare: (plan: RunPlan) => Promise<void>;
   play: () => Promise<void>;
   stop: () => Promise<void>;
@@ -31,6 +34,30 @@ export type RuntimeCoordinator = Readonly<{
 }>;
 
 type TimerHandle = ReturnType<typeof setTimeout>;
+
+type PreparingAudio = {
+  estimatedBytes: number;
+  required: boolean;
+  promise: Promise<void>;
+};
+
+const assertAudioPolicy = (policy: AudioPrefetchPolicy) => {
+  const values = Object.values(policy);
+  if (!values.every((value) => Number.isSafeInteger(value) && value >= 0))
+    throw new RangeError("Audio prefetch policyには0以上の整数が必要です");
+  if (policy.maximumPreparedSpeechCues < 1)
+    throw new RangeError("maximumPreparedSpeechCuesは1以上にしてください");
+  if (policy.maximumPreparedBytes < 1 || policy.maximumSingleCueBytes < 1)
+    throw new RangeError("Audio byte上限は1以上にしてください");
+  if (policy.minimumReadySpeechCues > policy.maximumPreparedSpeechCues)
+    throw new RangeError(
+      "minimumReadySpeechCuesはmaximumPreparedSpeechCues以下にしてください",
+    );
+  if (policy.maximumSingleCueBytes > policy.maximumPreparedBytes)
+    throw new RangeError(
+      "maximumSingleCueBytesはmaximumPreparedBytes以下にしてください",
+    );
+};
 
 export const createRuntimeCoordinator = ({
   actor,
@@ -43,6 +70,7 @@ export const createRuntimeCoordinator = ({
   audio: AudioPreparationPort;
   audioPolicy?: AudioPrefetchPolicy;
 }>): RuntimeCoordinator => {
+  assertAudioPolicy(audioPolicy);
   let state: RuntimeState = { status: "idle" };
   let processing = false;
   let disposed = false;
@@ -50,7 +78,10 @@ export const createRuntimeCoordinator = ({
   const observers = new Set<RuntimeObserver>();
   const timers = new Map<string, TimerHandle>();
   const eventAbort = new AbortController();
-  const prepared = new Map<string, number>();
+  let audioAbort = new AbortController();
+  let audioGeneration = 0;
+  const prepared = new Map<string, PreparedAudio>();
+  const preparingAudio = new Map<string, PreparingAudio>();
 
   const notify = () => observers.forEach((observer) => observer(state));
   const enqueue = (event: RuntimeEvent) => queue.push(event);
@@ -72,6 +103,82 @@ export const createRuntimeCoordinator = ({
         });
       }, durationMs),
     );
+  };
+
+  const beginAudioRun = () => {
+    audioGeneration += 1;
+    audioAbort.abort();
+    audioAbort = new AbortController();
+    prepared.clear();
+    preparingAudio.clear();
+  };
+
+  const endAudioRun = () => {
+    audioGeneration += 1;
+    audioAbort.abort();
+    prepared.clear();
+    preparingAudio.clear();
+  };
+
+  const prepareSpeech = (
+    speech: PlannedSpeech,
+    required: boolean,
+  ): Promise<void> => {
+    if (prepared.has(speech.fingerprint)) {
+      enqueue({ type: "AUDIO_READY", fingerprint: speech.fingerprint });
+      return Promise.resolve();
+    }
+    const existing = preparingAudio.get(speech.fingerprint);
+    if (existing) {
+      if (required) existing.required = true;
+      return existing.promise;
+    }
+
+    const entry: PreparingAudio = {
+      estimatedBytes: speech.estimatedBytes,
+      required,
+      promise: Promise.resolve(),
+    };
+    preparingAudio.set(speech.fingerprint, entry);
+    const generation = audioGeneration;
+    const signal = audioAbort.signal;
+    entry.promise = (async () => {
+      try {
+        if (speech.estimatedBytes > audioPolicy.maximumSingleCueBytes)
+          throw new Error("Speech Cueが単一Cueの音声サイズ上限を超えています");
+        const cached = await audio.get(speech.fingerprint);
+        const result = cached ?? (await audio.prepare(speech, signal));
+        if (generation !== audioGeneration || disposed) return;
+        if (result.fingerprint !== speech.fingerprint)
+          throw new Error("準備済み音声のfingerprintが要求と一致しません");
+        if (result.byteSize > audioPolicy.maximumSingleCueBytes)
+          throw new Error("Speech Cueが単一Cueの音声サイズ上限を超えています");
+        const preparedBytes = [...prepared.values()].reduce(
+          (sum, audio) => sum + audio.byteSize,
+          0,
+        );
+        if (
+          !prepared.has(result.fingerprint) &&
+          preparedBytes + result.byteSize > audioPolicy.maximumPreparedBytes
+        )
+          throw new Error("準備済み音声が先読み枠のbyte上限を超えています");
+        prepared.set(result.fingerprint, result);
+        enqueue({ type: "AUDIO_READY", fingerprint: result.fingerprint });
+      } catch (error) {
+        if (generation !== audioGeneration || disposed) return;
+        enqueue({
+          type: "AUDIO_PREPARE_FAILED",
+          fingerprint: speech.fingerprint,
+          message: error instanceof Error ? error.message : String(error),
+          required: entry.required,
+        });
+      } finally {
+        if (preparingAudio.get(speech.fingerprint) === entry)
+          preparingAudio.delete(speech.fingerprint);
+        if (generation === audioGeneration && !disposed) void drain();
+      }
+    })();
+    return entry.promise;
   };
 
   const interpret = async (effect: RuntimeEffect): Promise<void> => {
@@ -119,23 +226,18 @@ export const createRuntimeCoordinator = ({
         }
         break;
       case "audio.prepare":
-        try {
-          const cached = await audio.get(effect.speech.fingerprint);
-          const result =
-            cached ?? (await audio.prepare(effect.speech, eventAbort.signal));
-          prepared.set(result.fingerprint, result.byteSize);
-          enqueue({ type: "AUDIO_READY", fingerprint: result.fingerprint });
-        } catch (error) {
-          enqueue({
-            type: "AUDIO_PREPARE_FAILED",
-            fingerprint: effect.speech.fingerprint,
-            message: error instanceof Error ? error.message : String(error),
-            required: true,
-          });
-        }
+        await prepareSpeech(effect.speech, true);
         break;
       case "audio.prefetch": {
-        const window = planAudioWindow(effect.speech, 0, prepared, audioPolicy);
+        const reserved = new Map(
+          [...prepared].map(([fingerprint, result]) => [
+            fingerprint,
+            result.byteSize,
+          ]),
+        );
+        for (const [fingerprint, entry] of preparingAudio)
+          reserved.set(fingerprint, entry.estimatedBytes);
+        const window = planAudioWindow(effect.speech, 0, reserved, audioPolicy);
         if (!window.ok) {
           enqueue({
             type: "AUDIO_PREPARE_FAILED",
@@ -145,24 +247,7 @@ export const createRuntimeCoordinator = ({
           });
           break;
         }
-        await Promise.all(
-          window.speech.map(async (speech) => {
-            try {
-              const cached = await audio.get(speech.fingerprint);
-              const result =
-                cached ?? (await audio.prepare(speech, eventAbort.signal));
-              prepared.set(result.fingerprint, result.byteSize);
-              enqueue({ type: "AUDIO_READY", fingerprint: result.fingerprint });
-            } catch (error) {
-              enqueue({
-                type: "AUDIO_PREPARE_FAILED",
-                fingerprint: speech.fingerprint,
-                message: error instanceof Error ? error.message : String(error),
-                required: false,
-              });
-            }
-          }),
-        );
+        for (const speech of window.speech) void prepareSpeech(speech, false);
         break;
       }
       case "timer.start":
@@ -178,6 +263,7 @@ export const createRuntimeCoordinator = ({
         );
         break;
       case "run.cleanup":
+        endAudioRun();
         for (const timer of timers.values()) clearTimeout(timer);
         timers.clear();
         await stage.stopAll().catch(() => undefined);
@@ -192,6 +278,14 @@ export const createRuntimeCoordinator = ({
     try {
       while (queue.length > 0 && !disposed) {
         const event = queue.shift()!;
+        if (state.status === "idle" && event.type === "RUN_REQUESTED")
+          beginAudioRun();
+        const consumedFingerprint =
+          state.status === "playing" &&
+          event.type === "CUE_COMPLETED" &&
+          event.executionId === state.active.executionId
+            ? state.active.speech?.fingerprint
+            : undefined;
         if (
           "executionId" in event &&
           (event.type === "CUE_COMPLETED" ||
@@ -202,6 +296,13 @@ export const createRuntimeCoordinator = ({
         }
         const transition = reduceRuntime(state, event);
         state = transition.state;
+        if (
+          consumedFingerprint &&
+          state.status !== "idle" &&
+          !state.preparedAudio.includes(consumedFingerprint)
+        )
+          prepared.delete(consumedFingerprint);
+        if (state.status === "idle") prepared.clear();
         notify();
         await Promise.all(transition.effects.map(interpret));
       }
@@ -245,7 +346,13 @@ export const createRuntimeCoordinator = ({
 
   return {
     getState: () => state,
-    prepare: (plan) => dispatch({ type: "RUN_REQUESTED", plan }),
+    getPreparedAudio: (fingerprint) => prepared.get(fingerprint),
+    prepare: (plan) =>
+      dispatch({
+        type: "RUN_REQUESTED",
+        plan,
+        minimumReadySpeechCues: audioPolicy.minimumReadySpeechCues,
+      }),
     play: () => dispatch({ type: "PLAY_REQUESTED" }),
     stop: () => dispatch({ type: "STOP_REQUESTED" }),
     reset: () => dispatch({ type: "RESET" }),
@@ -257,6 +364,7 @@ export const createRuntimeCoordinator = ({
     },
     dispose() {
       disposed = true;
+      endAudioRun();
       eventAbort.abort();
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();

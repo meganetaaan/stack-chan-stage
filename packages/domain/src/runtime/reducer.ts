@@ -7,7 +7,6 @@ import type {
 } from "./types";
 
 const INITIAL_READY_SPEECH = 1;
-const PREFETCH_SPEECH = 3;
 
 const isStageCue = (
   cue: PlannedCue,
@@ -62,6 +61,14 @@ const effectsForCue = (
   ];
 };
 
+const futureSpeech = (
+  state: Extract<RuntimeState, { status: "ready" | "playing" }>,
+  cursor: number,
+) =>
+  state.plan.cues
+    .slice(cursor + 1)
+    .flatMap((cue) => (cue.speech ? [cue.speech] : []));
+
 const beginAt = (
   state: Extract<RuntimeState, { status: "ready" | "playing" }>,
   cursor: number,
@@ -96,7 +103,18 @@ const beginAt = (
     cursor,
     active: next,
   };
-  return { state: playing, effects: effectsForCue(playing, next) };
+  const prefetch = futureSpeech(playing, cursor);
+  return {
+    state: playing,
+    effects: [
+      ...effectsForCue(playing, next),
+      ...(prefetch.length > 0
+        ? ([
+            { type: "audio.prefetch", speech: prefetch },
+          ] satisfies RuntimeEffect[])
+        : []),
+    ],
+  };
 };
 
 const fail = (
@@ -146,23 +164,37 @@ export const reduceRuntime = (
         event.plan.cues.flatMap((cue) => (cue.actorId ? [cue.actorId] : [])),
       ),
     ];
-    const initial = event.plan.speech.slice(0, INITIAL_READY_SPEECH);
-    const prefetch = event.plan.speech.slice(
-      INITIAL_READY_SPEECH,
-      PREFETCH_SPEECH,
-    );
+    const requestedMinimum =
+      event.minimumReadySpeechCues ?? INITIAL_READY_SPEECH;
+    const minimumReadySpeechCues = Number.isFinite(requestedMinimum)
+      ? Math.max(0, Math.trunc(requestedMinimum))
+      : INITIAL_READY_SPEECH;
+    const initial = event.plan.speech.slice(0, minimumReadySpeechCues);
+    const prefetch = event.plan.speech.slice(initial.length);
     const preparing: RuntimeState = {
       status: "preparing",
       plan: event.plan,
       preparedAudio: [],
+      requiredAudio: initial.map((speech) => speech.fingerprint),
     };
     if (initial.length === 0)
       return {
-        state: { ...preparing, status: "ready" },
-        effects: actorIds.map((actorId) => ({
-          type: "actor.connect",
-          actorId,
-        })),
+        state: {
+          status: "ready",
+          plan: event.plan,
+          preparedAudio: [],
+        },
+        effects: [
+          ...actorIds.map((actorId): RuntimeEffect => ({
+            type: "actor.connect",
+            actorId,
+          })),
+          ...(prefetch.length > 0
+            ? ([
+                { type: "audio.prefetch", speech: prefetch },
+              ] satisfies RuntimeEffect[])
+            : []),
+        ],
       };
     return {
       state: preparing,
@@ -241,14 +273,21 @@ export const reduceRuntime = (
       ? state.preparedAudio
       : [...state.preparedAudio, event.fingerprint];
     if (state.status === "preparing") {
-      const required = state.plan.speech.slice(0, INITIAL_READY_SPEECH);
-      const ready = required.every((speech) =>
-        preparedAudio.includes(speech.fingerprint),
+      const ready = state.requiredAudio.every((fingerprint) =>
+        preparedAudio.includes(fingerprint),
       );
+      if (ready)
+        return {
+          state: {
+            status: "ready",
+            plan: state.plan,
+            preparedAudio,
+          },
+          effects: [],
+        };
       return {
         state: {
           ...state,
-          status: ready ? "ready" : "preparing",
           preparedAudio,
         },
         effects: [],
@@ -279,7 +318,23 @@ export const reduceRuntime = (
   if (event.type === "CUE_COMPLETED") {
     if (event.executionId !== state.active.executionId)
       return { state, effects: [] };
-    return beginAt(state, state.cursor + 1);
+    const consumedFingerprint = state.active.speech?.fingerprint;
+    const nextFingerprint =
+      state.plan.cues[state.cursor + 1]?.speech?.fingerprint;
+    const preparedAudio =
+      consumedFingerprint && consumedFingerprint !== nextFingerprint
+        ? state.preparedAudio.filter(
+            (fingerprint) => fingerprint !== consumedFingerprint,
+          )
+        : state.preparedAudio;
+    return beginAt(
+      {
+        status: "ready",
+        plan: state.plan,
+        preparedAudio,
+      },
+      state.cursor + 1,
+    );
   }
   if (
     event.type === "CUE_FAILED" &&

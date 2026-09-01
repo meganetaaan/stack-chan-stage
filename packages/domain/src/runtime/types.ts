@@ -74,7 +74,8 @@ type RuntimeBase = Readonly<{
 
 export type RuntimeState =
   | Readonly<{ status: "idle" }>
-  | (RuntimeBase & Readonly<{ status: "preparing" }>)
+  | (RuntimeBase &
+      Readonly<{ status: "preparing"; requiredAudio: readonly string[] }>)
   | (RuntimeBase & Readonly<{ status: "ready" }>)
   | (RuntimeBase &
       Readonly<{ status: "playing"; cursor: number; active: PlannedCue }>)
@@ -90,7 +91,11 @@ export type RuntimeState =
   | (RuntimeBase & Readonly<{ status: "failed"; failure: RuntimeFailure }>);
 
 export type RuntimeEvent =
-  | Readonly<{ type: "RUN_REQUESTED"; plan: RunPlan }>
+  | Readonly<{
+      type: "RUN_REQUESTED";
+      plan: RunPlan;
+      minimumReadySpeechCues?: number;
+    }>
   | Readonly<{ type: "AUDIO_READY"; fingerprint: string }>
   | Readonly<{
       type: "AUDIO_PREPARE_FAILED";

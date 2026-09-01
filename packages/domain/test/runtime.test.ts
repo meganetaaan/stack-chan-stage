@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   asCueExecutionId,
+  asCueId,
   asRunId,
   compileRun,
   reduceRuntime,
@@ -108,6 +109,50 @@ describe("Runtime reducer", () => {
     expect(transition.effects[0]?.type).toBe("actor.execute");
     if (transition.state.status !== "playing") return;
     expect(transition.state.active.cue.kind).toBe("speech");
+  });
+
+  it("設定された最低Speech Cue数が揃うまでReadyにしない", () => {
+    const plan = compileFixture();
+    const first = plan.speech[0];
+    if (!first) throw new Error("expected speech");
+    const second = {
+      ...first,
+      cueId: asCueId("cue-second-speech"),
+      executionId: asCueExecutionId("execution-second-speech"),
+      fingerprint: "fingerprint-second-speech",
+    };
+    const twoSpeechPlan: RunPlan = {
+      ...plan,
+      speech: [first, second],
+    };
+
+    let transition = reduceRuntime(
+      { status: "idle" },
+      {
+        type: "RUN_REQUESTED",
+        plan: twoSpeechPlan,
+        minimumReadySpeechCues: 2,
+      },
+    );
+    expect(transition.state).toMatchObject({
+      status: "preparing",
+      requiredAudio: [first.fingerprint, second.fingerprint],
+    });
+    expect(
+      transition.effects.filter((effect) => effect.type === "audio.prepare"),
+    ).toHaveLength(2);
+
+    transition = reduceRuntime(transition.state, {
+      type: "AUDIO_READY",
+      fingerprint: first.fingerprint,
+    });
+    expect(transition.state.status).toBe("preparing");
+
+    transition = reduceRuntime(transition.state, {
+      type: "AUDIO_READY",
+      fingerprint: second.fingerprint,
+    });
+    expect(transition.state.status).toBe("ready");
   });
 
   it("timeoutでactive CueをcancelしRunをfailedにする", () => {

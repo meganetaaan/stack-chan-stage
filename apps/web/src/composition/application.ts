@@ -3,6 +3,7 @@ import {
   createWorkspaceStore,
   type AudioPreparationPort,
   type ProjectSnapshot,
+  type RuntimeCoordinator,
   type StagePort,
   type WorkspaceStore,
 } from "@stackchan-stage/application";
@@ -252,6 +253,10 @@ export const createStageWebApplication =
       prepare: (speech, signal) => audioImplementation.prepare(speech, signal),
       release: (assetId) => audioImplementation.release(assetId),
     };
+    let getPreparedAudio: RuntimeCoordinator["getPreparedAudio"] = () =>
+      undefined;
+    const resolveAudio = async (fingerprint: string) =>
+      getPreparedAudio(fingerprint) ?? audio.get(fingerprint);
     const setTtsEndpoint = async (endpoint?: string, token?: string) => {
       if (endpoint === ttsEndpoint && token === ttsToken) return;
       ttsEndpoint = endpoint;
@@ -271,7 +276,7 @@ export const createStageWebApplication =
     };
     const wasm = createWasmActorAdapter({
       bridge: stageBridge,
-      resolveAudio: (fingerprint) => audio.get(fingerprint),
+      resolveAudio,
     });
     const actor = createActorRouter();
     await actor.addSource({
@@ -284,6 +289,7 @@ export const createStageWebApplication =
 
     const stage = createStageProxy();
     const coordinator = createRuntimeCoordinator({ actor, stage, audio });
+    getPreparedAudio = coordinator.getPreparedAudio;
     const unsubscribeRuntime = coordinator.subscribe((runtime) =>
       store.setRuntime(runtime),
     );
@@ -571,7 +577,7 @@ export const createStageWebApplication =
           gatewayUrl: parsedSettings.data.gatewayUrl,
           token: parsedSettings.data.token,
           sessionId: parsedSettings.data.sessionId,
-          resolveAudio: (fingerprint) => audio.get(fingerprint),
+          resolveAudio,
         });
         try {
           removeDevice = await actor.addSource({

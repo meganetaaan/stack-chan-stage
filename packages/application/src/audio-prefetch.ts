@@ -25,6 +25,7 @@ export const planAudioWindow = (
   policy: AudioPrefetchPolicy = DEFAULT_AUDIO_PREFETCH_POLICY,
 ): AudioWindowPlan => {
   const selected: PlannedSpeech[] = [];
+  const reservedFingerprints = new Set(prepared.keys());
   let totalBytes = [...prepared.values()].reduce(
     (sum, bytes) => sum + bytes,
     0,
@@ -32,13 +33,14 @@ export const planAudioWindow = (
   let preparedCount = prepared.size;
 
   for (const candidate of speech.slice(startIndex)) {
+    if (reservedFingerprints.has(candidate.fingerprint)) continue;
+    if (preparedCount >= policy.maximumPreparedSpeechCues) break;
     if (candidate.estimatedBytes > policy.maximumSingleCueBytes)
       return { ok: false, code: "audio_too_large", speech: candidate };
-    if (prepared.has(candidate.fingerprint)) continue;
-    if (preparedCount >= policy.maximumPreparedSpeechCues) break;
     if (totalBytes + candidate.estimatedBytes > policy.maximumPreparedBytes)
       break;
     selected.push(candidate);
+    reservedFingerprints.add(candidate.fingerprint);
     preparedCount += 1;
     totalBytes += candidate.estimatedBytes;
   }

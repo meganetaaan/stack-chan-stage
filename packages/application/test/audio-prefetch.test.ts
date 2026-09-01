@@ -64,6 +64,34 @@ describe("Audio rolling prefetch", () => {
     });
   });
 
+  it("同じfingerprintを先読み枠で重複して数えない", () => {
+    const repeated = speech(0, 200);
+    const result = planAudioWindow(
+      [repeated, repeated, speech(1, 200), speech(2, 200)],
+      0,
+      new Map(),
+      policy,
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      speech: [repeated, speech(1, 200), speech(2, 200)],
+    });
+  });
+
+  it("先読み枠が満杯なら枠外の長大Cueをまだ評価しない", () => {
+    const result = planAudioWindow(
+      [speech(3, 601)],
+      0,
+      new Map([
+        ["fingerprint-0", 100],
+        ["fingerprint-1", 100],
+        ["fingerprint-2", 100],
+      ]),
+      policy,
+    );
+    expect(result).toEqual({ ok: true, speech: [], totalBytes: 300 });
+  });
+
   it("保護中assetを残しLRUから解放する", () => {
     const remaining = evictAudioLru(
       [
