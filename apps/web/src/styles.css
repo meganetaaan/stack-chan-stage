@@ -1804,8 +1804,23 @@ p {
     grid-template-columns: 1fr;
   }
 
+  .asset-panel > .panel-heading {
+    display: grid;
+    gap: 10px;
+  }
+
+  .asset-import-controls {
+    width: 100%;
+  }
+
   .asset-import-controls select {
-    display: none;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .asset-import-controls .button {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .asset-grid {

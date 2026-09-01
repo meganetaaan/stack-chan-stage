@@ -7,6 +7,7 @@ import {
   Clapperboard,
   Expand,
   FileAudio,
+  Files,
   GripVertical,
   Image,
   Layers3,
@@ -53,6 +54,10 @@ import {
   cueScriptText,
   cueSummary,
 } from "./features/editor/cue-presentation";
+import {
+  importFileAssets,
+  type FileAssetImportProgress,
+} from "./features/assets/import-file-assets";
 import {
   SimulatorView,
   type SimulatorPhase,
@@ -1179,7 +1184,9 @@ const AssetPanel = ({
 }>) => {
   const workspace = useWorkspace(application.store);
   const [kind, setKind] = useState<AssetKind>("backdrop");
-  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] =
+    useState<FileAssetImportProgress>();
+  const importing = importProgress !== undefined;
   const fileRef = useRef<HTMLInputElement>(null);
   return (
     <section className="workspace-panel asset-panel">
@@ -1192,6 +1199,7 @@ const AssetPanel = ({
           <select
             aria-label="素材の種類"
             value={kind}
+            disabled={importing}
             onChange={(event) =>
               setKind(event.target.value === "music" ? "music" : "backdrop")
             }
@@ -1201,53 +1209,99 @@ const AssetPanel = ({
           </select>
           <button
             className="button primary"
+            aria-label={
+              importProgress
+                ? `${importProgress.current}/${importProgress.total}件目、${importProgress.fileName}を取込中`
+                : "素材ファイルをまとめて追加"
+            }
             onClick={() => fileRef.current?.click()}
             disabled={importing}
           >
             {importing ? (
               <LoaderCircle className="spin" size={15} />
             ) : (
-              <Plus size={15} />
+              <Files size={15} />
             )}
-            {importing ? "取込中" : "ファイルを追加"}
+            {importProgress
+              ? `${importProgress.current}/${importProgress.total} 取込中`
+              : "まとめて追加"}
           </button>
           <input
             ref={fileRef}
             className="visually-hidden"
             type="file"
+            multiple
             accept={kind === "backdrop" ? "image/*" : "audio/*"}
             onChange={async (event) => {
-              const file = event.target.files?.[0];
+              const files = Array.from(event.target.files ?? []);
               event.target.value = "";
-              if (!file) return;
-              setImporting(true);
+              if (files.length === 0) return;
+              const selectedKind = kind;
               try {
-                const asset = await application.importFileAsset(file, kind);
-                const result = await application.store.dispatch({
-                  type: "asset.import",
-                  expectedRevision: application.store.getSnapshot().revision,
-                  asset,
+                const summary = await importFileAssets(files, selectedKind, {
+                  prepare: application.importFileAsset,
+                  async add(asset) {
+                    const snapshot = application.store.getSnapshot();
+                    if (
+                      snapshot.scenario.assets.some(
+                        (current) => current.id === asset.id,
+                      )
+                    )
+                      return { ok: true, added: false };
+                    const result = await application.store.dispatch({
+                      type: "asset.import",
+                      expectedRevision: snapshot.revision,
+                      asset,
+                    });
+                    return result.ok
+                      ? { ok: true, added: true }
+                      : {
+                          ok: false,
+                          message: result.message,
+                          issues: result.validationIssues,
+                        };
+                  },
+                  onProgress: setImportProgress,
                 });
-                setNotice(
-                  result.ok
-                    ? {
-                        tone: "success",
-                        message: `${asset.name}を追加しました`,
-                      }
-                    : {
-                        tone: "error",
-                        message: result.message,
-                        issues: result.validationIssues,
-                      },
-                );
-              } catch (error) {
-                setNotice({
-                  tone: "error",
-                  message:
-                    error instanceof Error ? error.message : String(error),
-                });
+                const added = summary.added.length;
+                const skipped = summary.skipped.length;
+                const failed = summary.failures.length;
+                if (failed > 0) {
+                  const first = summary.failures[0];
+                  const firstFailure = first
+                    ? `${first.fileName}: ${first.message}`
+                    : "不明なファイル";
+                  setNotice({
+                    tone: "error",
+                    message: `${added}件を追加、${failed}件を追加できませんでした：${firstFailure}`,
+                    issues: summary.failures.flatMap((failure) =>
+                      failure.issues.length > 0
+                        ? failure.issues.map((entry) => ({
+                            ...entry,
+                            message: `${failure.fileName}: ${entry.message}`,
+                          }))
+                        : [
+                            {
+                              code: "asset.file_import_failed",
+                              message: `${failure.fileName}: ${failure.message}`,
+                              path: [],
+                              severity: "error" as const,
+                            },
+                          ],
+                    ),
+                  });
+                } else if (added > 0)
+                  setNotice({
+                    tone: "success",
+                    message: `${added}件の素材を追加しました${skipped > 0 ? `（追加済み${skipped}件）` : ""}`,
+                  });
+                else
+                  setNotice({
+                    tone: "info",
+                    message: `${skipped}件の素材は追加済みです`,
+                  });
               } finally {
-                setImporting(false);
+                setImportProgress(undefined);
               }
             }}
           />
@@ -1280,7 +1334,7 @@ const AssetPanel = ({
         >
           <Library size={24} />
           <strong>素材はまだありません</strong>
-          <span>背景画像またはBGMを追加</span>
+          <span>背景画像またはBGMをまとめて追加</span>
         </button>
       )}
     </section>
