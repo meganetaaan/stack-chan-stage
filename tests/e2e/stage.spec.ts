@@ -209,6 +209,14 @@ test("キューを検証して編集し、WASM Actorで上演できる", async (
     "途中に挿入したセリフです。",
   );
 
+  const firstCue = page.locator("[data-cue-id='cue-greeting']");
+  await insertedTrack.locator(".cue-drag-handle").dragTo(firstCue, {
+    targetPosition: { x: 120, y: 8 },
+  });
+  await expect(page.locator(".cue-script-text").nth(1)).toContainText(
+    "途中に挿入したセリフです。",
+  );
+
   await insertedTrack.getByRole("button", { name: "削除" }).click();
   await expect(page.locator(".cue-track")).toHaveCount(3);
 

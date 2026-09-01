@@ -54,6 +54,7 @@ import {
   cueScriptNote,
   cueSummary,
 } from "./features/editor/cue-presentation";
+import { cueDropBoundary } from "./features/editor/cue-reorder";
 import {
   importFileAssets,
   type FileAssetImportProgress,
@@ -497,6 +498,33 @@ const Timeline = ({
                 }
                 data-cue-id={cue.id}
                 data-role-group={groupPosition}
+                onDragOver={(event) => {
+                  if (!draggedCueIdRef.current) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  setDropIndex(
+                    cueDropBoundary({
+                      cueIndex: index,
+                      pointerY: event.clientY,
+                      top: bounds.top,
+                      height: bounds.height,
+                    }),
+                  );
+                }}
+                onDrop={(event) => {
+                  if (!draggedCueIdRef.current) return;
+                  event.preventDefault();
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  void dropCueAt(
+                    cueDropBoundary({
+                      cueIndex: index,
+                      pointerY: event.clientY,
+                      top: bounds.top,
+                      height: bounds.height,
+                    }),
+                  );
+                }}
               >
                 <span className="cue-index">{displayIndex}</span>
                 {isEditing ? (
