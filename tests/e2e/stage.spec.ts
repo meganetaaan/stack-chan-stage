@@ -209,6 +209,28 @@ test("キューを検証して編集し、WASM Actorで上演できる", async (
     "途中に挿入したセリフです。",
   );
 
+  await insertedTrack
+    .locator(".cue-drag-handle")
+    .dragTo(page.locator(".timeline-header"));
+  await expect(page.locator(".cue-script-text").first()).toContainText(
+    "途中に挿入したセリフです。",
+  );
+
+  const timelinePanel = page.locator(".timeline-panel");
+  const timelineBounds = await timelinePanel.boundingBox();
+  const cueListBounds = await page.locator(".cue-list").boundingBox();
+  if (!timelineBounds || !cueListBounds)
+    throw new Error("timeline bounds are unavailable");
+  await insertedTrack.locator(".cue-drag-handle").dragTo(timelinePanel, {
+    targetPosition: {
+      x: 120,
+      y: cueListBounds.y + cueListBounds.height - timelineBounds.y + 16,
+    },
+  });
+  await expect(page.locator(".cue-script-text").nth(3)).toContainText(
+    "途中に挿入したセリフです。",
+  );
+
   const firstCue = page.locator("[data-cue-id='cue-greeting']");
   await insertedTrack.locator(".cue-drag-handle").dragTo(firstCue, {
     targetPosition: { x: 120, y: 8 },

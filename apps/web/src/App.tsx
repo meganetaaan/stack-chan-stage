@@ -54,7 +54,10 @@ import {
   cueScriptNote,
   cueSummary,
 } from "./features/editor/cue-presentation";
-import { cueDropBoundary } from "./features/editor/cue-reorder";
+import {
+  cueDropBoundary,
+  cueListEdgeDropBoundary,
+} from "./features/editor/cue-reorder";
 import {
   importFileAssets,
   type FileAssetImportProgress,
@@ -329,6 +332,7 @@ const Timeline = ({
     | Readonly<{ mode: "edit"; cueId: Cue["id"] }>
   >();
   const draggedCueIdRef = useRef<Cue["id"] | undefined>(undefined);
+  const cueListRef = useRef<HTMLOListElement>(null);
   const [draggedCueId, setDraggedCueId] = useState<Cue["id"]>();
   const [dropIndex, setDropIndex] = useState<number>();
   const lane = scene.lanes[0];
@@ -445,8 +449,37 @@ const Timeline = ({
     workspace.scenario.assets,
   );
 
+  const edgeDropBoundary = (pointerY: number) => {
+    const list = cueListRef.current;
+    if (!list) return undefined;
+    const bounds = list.getBoundingClientRect();
+    return cueListEdgeDropBoundary({
+      pointerY,
+      top: bounds.top,
+      bottom: bounds.bottom,
+      cueCount: lane.cues.length,
+    });
+  };
+
   return (
-    <section className="timeline-panel">
+    <section
+      className="timeline-panel"
+      onDragOver={(event) => {
+        if (!draggedCueIdRef.current) return;
+        const boundary = edgeDropBoundary(event.clientY);
+        if (boundary === undefined) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDropIndex(boundary);
+      }}
+      onDrop={(event) => {
+        if (!draggedCueIdRef.current) return;
+        const boundary = edgeDropBoundary(event.clientY);
+        if (boundary === undefined) return;
+        event.preventDefault();
+        void dropCueAt(boundary);
+      }}
+    >
       <header className="timeline-header">
         <div className="scene-title-block">
           <span className="eyebrow">SCENE</span>
@@ -472,7 +505,11 @@ const Timeline = ({
         </div>
       </header>
 
-      <ol className="cue-list" data-drag-active={draggedCueId !== undefined}>
+      <ol
+        className="cue-list"
+        data-drag-active={draggedCueId !== undefined}
+        ref={cueListRef}
+      >
         {scriptLines.map((line, index) => {
           const {
             cue,
