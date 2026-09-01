@@ -39,9 +39,10 @@ export const SimulatorView = ({
 
     void (async () => {
       try {
-        const response = await fetch("/simulator/stage-client.xsa", {
-          signal: controller.signal,
-        });
+        const response = await fetch(
+          new URL("simulator/stage-client.xsa", document.baseURI),
+          { signal: controller.signal },
+        );
         if (!response.ok)
           throw new Error(`Stage MOD failed with HTTP ${response.status}`);
         const storage = createMemoryModStorage();

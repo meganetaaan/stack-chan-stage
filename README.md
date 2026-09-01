@@ -49,6 +49,10 @@ npm run dev
 Web UIは`http://127.0.0.1:5173/`、Local Gatewayは`ws://127.0.0.1:8787`で起動します。
 WASM Actorだけを使う場合、Gatewayの接続設定は不要です。
 
+`main`へのpush後は、GitHub Pages workflowが
+`https://meganetaaan.github.io/stack-chan-stage/`へWeb UIを公開します。
+初回だけRepository SettingsのPagesでSourceを「GitHub Actions」に設定してください。
+
 Gatewayは起動時に一時pairing tokenを表示します。
 実機を使う場合は、そのtokenをUIの「配役」から開くLocal Gateway設定へ入力します。
 
