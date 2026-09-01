@@ -548,9 +548,6 @@ const Timeline = ({
                           roleName={roleName}
                           roleNameVisible={roleNameVisible}
                         >
-                          <span className="visually-hidden">
-                            {cueKindLabel[cue.kind]}:{" "}
-                          </span>
                           {bodyText}
                         </ScriptLine>
                         {scriptNote && (

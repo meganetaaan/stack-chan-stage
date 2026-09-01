@@ -43,6 +43,47 @@ const installWebMcpHarness = (page: Page) =>
     });
   });
 
+const installSpeechSynthesisHarness = (page: Page) =>
+  page.addInitScript(() => {
+    class FakeSpeechSynthesisUtterance {
+      readonly text: string;
+      voice = null;
+      lang = "";
+      onstart: (() => void) | null = null;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: FakeSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        cancel() {},
+        getVoices: () => [
+          {
+            default: true,
+            lang: "ja-JP",
+            localService: true,
+            name: "E2E Japanese Voice",
+            voiceURI: "e2e-ja-JP",
+          },
+        ],
+        speak(utterance: FakeSpeechSynthesisUtterance) {
+          window.setTimeout(() => {
+            utterance.onstart?.();
+            window.setTimeout(() => utterance.onend?.(), 1_200);
+          }, 0);
+        },
+      },
+    });
+  });
+
 const callWebMcp = (page: Page, name: string, input: Record<string, unknown>) =>
   page.evaluate(
     async ({ toolName, toolInput }) => {
@@ -111,37 +152,7 @@ const countBrightMouthPixels = (page: Page) =>
     });
 
 test("キューを検証して編集し、WASM Actorで上演できる", async ({ page }) => {
-  await page.addInitScript(() => {
-    class FakeSpeechSynthesisUtterance {
-      readonly text: string;
-      voice = null;
-      lang = "";
-      onstart: (() => void) | null = null;
-      onend: (() => void) | null = null;
-      onerror: (() => void) | null = null;
-
-      constructor(text: string) {
-        this.text = text;
-      }
-    }
-    Object.defineProperty(window, "SpeechSynthesisUtterance", {
-      configurable: true,
-      value: FakeSpeechSynthesisUtterance,
-    });
-    Object.defineProperty(window, "speechSynthesis", {
-      configurable: true,
-      value: {
-        cancel() {},
-        getVoices: () => [],
-        speak(utterance: FakeSpeechSynthesisUtterance) {
-          window.setTimeout(() => {
-            utterance.onstart?.();
-            window.setTimeout(() => utterance.onend?.(), 1_200);
-          }, 0);
-        },
-      },
-    });
-  });
+  await installSpeechSynthesisHarness(page);
   const browserErrors = captureBrowserErrors(page);
   await page.goto("/");
   await waitForSimulator(page);
@@ -154,6 +165,9 @@ test("キューを検証して編集し、WASM Actorで上演できる", async (
   const speechTrack = page.locator("[data-cue-id='cue-greeting']");
   await expect(speechTrack.locator(".cue-script-text")).toContainText(
     "語り手「ようこそ、スタックチャン・ステージへ。」",
+  );
+  await expect(speechTrack.locator(".cue-main")).toHaveAccessibleName(
+    /セリフ: 語り手「ようこそ、スタックチャン・ステージへ。」.*を編集/,
   );
   await speechTrack.locator(".cue-main").click();
   const editForm = page.getByRole("article", { name: "台本を編集" });
@@ -337,6 +351,7 @@ test("WebMCPで台本を取得・追記・推敲すると同じ画面へ反映�
   page,
 }) => {
   await installWebMcpHarness(page);
+  await installSpeechSynthesisHarness(page);
   const browserErrors = captureBrowserErrors(page);
   const motionEvents: string[] = [];
   page.on("console", (message) => {
