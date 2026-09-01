@@ -81,10 +81,11 @@ const formatDuration = (durationMs: number) =>
     ? `${Number((durationMs / 1_000).toFixed(1))}秒`
     : `${durationMs}ミリ秒`;
 
-export const cueScriptText = (
+const formatCueScriptText = (
   cue: Cue,
   roles: readonly Role[],
   assets: readonly AssetMetadata[] = [],
+  omitRoleName = false,
 ) => {
   const role =
     "roleId" in cue
@@ -97,17 +98,19 @@ export const cueScriptText = (
       : undefined;
   switch (cue.kind) {
     case "speech":
-      return `${roleName}「${cue.text}」`;
+      return `${omitRoleName ? "" : roleName}「${cue.text}」`;
     case "expression":
-      return `${roleName}　${expressionLabel[cue.expression] ?? cue.expression}`;
+      return `${omitRoleName ? "" : roleName}（${expressionLabel[cue.expression] ?? cue.expression}）`;
     case "motion":
-      return cue.motion.kind === "preset"
-        ? `${roleName}　${motionLabel[cue.motion.name] ?? cue.motion.name}`
-        : `${roleName}　yaw ${cue.motion.yaw} / pitch ${cue.motion.pitch} / ${formatDuration(cue.motion.durationMs)}`;
+      if (cue.motion.kind === "preset") {
+        const label = motionLabel[cue.motion.name] ?? cue.motion.name;
+        return `${omitRoleName ? "" : roleName}（${label}）`;
+      }
+      return `${omitRoleName ? "" : roleName}（yaw ${cue.motion.yaw} / pitch ${cue.motion.pitch} / ${formatDuration(cue.motion.durationMs)}）`;
     case "lighting.set":
-      return `${roleName}のライト　${cue.color} / ${Math.round(cue.brightness * 100)}%`;
+      return `${omitRoleName ? "" : `${roleName}の`}ライト　${cue.color} / ${Math.round(cue.brightness * 100)}%`;
     case "lighting.play":
-      return `${roleName}のライト　${cue.effect}`;
+      return `${omitRoleName ? "" : `${roleName}の`}ライト　${cue.effect}`;
     case "backdrop.set":
       return `「${assetName}」へ${
         cue.transition.kind === "cut"
@@ -125,6 +128,128 @@ export const cueScriptText = (
     case "pause":
       return `${formatDuration(cue.durationMs)}、間を置く`;
   }
+};
+
+export const cueScriptText = (
+  cue: Cue,
+  roles: readonly Role[],
+  assets: readonly AssetMetadata[] = [],
+) => formatCueScriptText(cue, roles, assets);
+
+export type CueScriptLine = Readonly<{
+  cue: Cue;
+  text: string;
+  fullText: string;
+  continuesRole: boolean;
+  roleName: string | undefined;
+  roleNameVisible: boolean;
+  bodyText: string;
+  groupPosition: "none" | "single" | "start" | "middle" | "end";
+}>;
+
+type CueScriptLineDraft = Omit<CueScriptLine, "groupPosition"> &
+  Readonly<{ groupRoleId: Role["id"] | undefined }>;
+
+const roleNameFor = (roleId: Role["id"], roles: readonly Role[]) =>
+  roles.find((role) => role.id === roleId)?.name ?? roleId;
+
+const roleCueBodyText = (cue: Cue, roleNameVisible: boolean) => {
+  switch (cue.kind) {
+    case "speech":
+      return `「${cue.text}」`;
+    case "expression":
+      return `（${expressionLabel[cue.expression] ?? cue.expression}）`;
+    case "motion":
+      return cue.motion.kind === "preset"
+        ? `（${motionLabel[cue.motion.name] ?? cue.motion.name}）`
+        : `（yaw ${cue.motion.yaw} / pitch ${cue.motion.pitch} / ${formatDuration(cue.motion.durationMs)}）`;
+    case "lighting.set":
+      return `${roleNameVisible ? "の" : ""}ライト　${cue.color} / ${Math.round(cue.brightness * 100)}%`;
+    case "lighting.play":
+      return `${roleNameVisible ? "の" : ""}ライト　${cue.effect}`;
+    case "backdrop.set":
+    case "music.start":
+    case "music.stop":
+    case "pause":
+      return undefined;
+  }
+};
+
+export const cueScriptLines = (
+  cues: readonly Cue[],
+  roles: readonly Role[],
+  assets: readonly AssetMetadata[] = [],
+): readonly CueScriptLine[] => {
+  let activeRoleId: Role["id"] | undefined;
+  let activeRoleName: string | undefined;
+
+  const drafts: readonly CueScriptLineDraft[] = cues.map((cue) => {
+    const roleId = "roleId" in cue ? cue.roleId : undefined;
+    if (roleId !== undefined) {
+      const roleName = roleNameFor(roleId, roles);
+      const roleNameVisible = roleId !== activeRoleId;
+      const bodyText = roleCueBodyText(cue, roleNameVisible);
+      const fullText = formatCueScriptText(cue, roles, assets);
+
+      activeRoleId = roleId;
+      activeRoleName = roleName;
+      return {
+        cue,
+        text:
+          bodyText === undefined
+            ? fullText
+            : `${roleNameVisible ? roleName : ""}${bodyText}`,
+        fullText,
+        continuesRole: !roleNameVisible,
+        roleName,
+        roleNameVisible,
+        bodyText: bodyText ?? fullText,
+        groupRoleId: roleId,
+      };
+    }
+
+    const fullText = formatCueScriptText(cue, roles, assets);
+    if (cue.kind === "pause" && activeRoleId && activeRoleName) {
+      return {
+        cue,
+        text: fullText,
+        fullText,
+        continuesRole: true,
+        roleName: activeRoleName,
+        roleNameVisible: false,
+        bodyText: fullText,
+        groupRoleId: activeRoleId,
+      };
+    }
+
+    activeRoleId = undefined;
+    activeRoleName = undefined;
+    return {
+      cue,
+      text: fullText,
+      fullText,
+      continuesRole: false,
+      roleName: undefined,
+      roleNameVisible: false,
+      bodyText: fullText,
+      groupRoleId: undefined,
+    };
+  });
+
+  return drafts.map(({ groupRoleId, ...line }, index) => {
+    if (groupRoleId === undefined) return { ...line, groupPosition: "none" };
+
+    const followsSameRole = drafts[index - 1]?.groupRoleId === groupRoleId;
+    const precedesSameRole = drafts[index + 1]?.groupRoleId === groupRoleId;
+    const groupPosition = followsSameRole
+      ? precedesSameRole
+        ? "middle"
+        : "end"
+      : precedesSameRole
+        ? "start"
+        : "single";
+    return { ...line, groupPosition };
+  });
 };
 
 export const cueScriptNote = (cue: Cue) =>

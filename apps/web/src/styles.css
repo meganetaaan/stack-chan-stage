@@ -530,6 +530,11 @@ p {
   gap: 10px;
 }
 
+.cue-track[data-role-group="start"],
+.cue-track[data-role-group="single"] {
+  margin-top: 4px;
+}
+
 .cue-insert-slot {
   position: relative;
   z-index: 3;
@@ -652,6 +657,11 @@ p {
   opacity: 0.45;
 }
 
+.cue-card[data-role-group="start"],
+.cue-card[data-role-group="middle"] {
+  border-bottom-color: #e9eceb;
+}
+
 .cue-drag-handle {
   display: grid;
   align-self: stretch;
@@ -730,6 +740,29 @@ p {
   font-size: 15px;
   font-weight: 580;
   line-height: 1.5;
+}
+
+.cue-script-text.role-indented,
+.cue-script-note.role-indented {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  min-width: 0;
+}
+
+.cue-script-role {
+  max-width: 8em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cue-script-role[data-placeholder="true"] {
+  visibility: hidden;
+}
+
+.cue-script-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .cue-script-note {

@@ -50,8 +50,8 @@ import { CueEditor } from "./features/editor/CueEditor";
 import {
   CueKindIcon,
   cueKindLabel,
+  cueScriptLines,
   cueScriptNote,
-  cueScriptText,
   cueSummary,
 } from "./features/editor/cue-presentation";
 import {
@@ -107,6 +107,32 @@ const IconButton = ({
   >
     {children}
   </button>
+);
+
+const ScriptLine = ({
+  className,
+  roleName,
+  roleNameVisible = false,
+  children,
+}: Readonly<{
+  className: string;
+  roleName?: string | undefined;
+  roleNameVisible?: boolean;
+  children: React.ReactNode;
+}>) => (
+  <span className={`${className}${roleName ? " role-indented" : ""}`}>
+    {roleName && (
+      <span
+        className="cue-script-role"
+        data-placeholder={!roleNameVisible}
+        aria-hidden={roleNameVisible ? undefined : true}
+        title={roleNameVisible ? roleName : undefined}
+      >
+        {roleName}
+      </span>
+    )}
+    <span className="cue-script-body">{children}</span>
+  </span>
 );
 
 const CueActionMenu = ({
@@ -412,6 +438,12 @@ const Timeline = ({
     />
   );
 
+  const scriptLines = cueScriptLines(
+    lane.cues,
+    workspace.scenario.roles,
+    workspace.scenario.assets,
+  );
+
   return (
     <section className="timeline-panel">
       <header className="timeline-header">
@@ -440,12 +472,15 @@ const Timeline = ({
       </header>
 
       <ol className="cue-list" data-drag-active={draggedCueId !== undefined}>
-        {lane.cues.map((cue, index) => {
-          const scriptText = cueScriptText(
+        {scriptLines.map((line, index) => {
+          const {
             cue,
-            workspace.scenario.roles,
-            workspace.scenario.assets,
-          );
+            fullText,
+            roleName,
+            roleNameVisible,
+            bodyText,
+            groupPosition,
+          } = line;
           const scriptNote = cueScriptNote(cue);
           const isEditing = editor?.mode === "edit" && editor.cueId === cue.id;
           const displayIndex =
@@ -461,6 +496,7 @@ const Timeline = ({
                   isEditing ? "cue-track cue-track-editor" : "cue-track"
                 }
                 data-cue-id={cue.id}
+                data-role-group={groupPosition}
               >
                 <span className="cue-index">{displayIndex}</span>
                 {isEditing ? (
@@ -475,11 +511,12 @@ const Timeline = ({
                     className="cue-card"
                     data-active={cue.id === activeCueId}
                     data-dragging={cue.id === draggedCueId}
+                    data-role-group={groupPosition}
                   >
                     <span
                       className="cue-drag-handle"
                       draggable={editor === undefined}
-                      title={`${scriptText}をドラッグして並べ替え`}
+                      title={`${fullText}をドラッグして並べ替え`}
                       aria-hidden="true"
                       onDragStart={(event) => {
                         draggedCueIdRef.current = cue.id;
@@ -496,6 +533,7 @@ const Timeline = ({
                     </span>
                     <button
                       className="cue-main"
+                      aria-label={`${cueKindLabel[cue.kind]}: ${fullText}${scriptNote ? `（${scriptNote}）` : ""}を編集`}
                       onClick={() => setEditor({ mode: "edit", cueId: cue.id })}
                     >
                       <span
@@ -505,16 +543,23 @@ const Timeline = ({
                         <CueKindIcon kind={cue.kind} />
                       </span>
                       <span className="cue-copy">
-                        <span className="cue-script-text">
+                        <ScriptLine
+                          className="cue-script-text"
+                          roleName={roleName}
+                          roleNameVisible={roleNameVisible}
+                        >
                           <span className="visually-hidden">
                             {cueKindLabel[cue.kind]}:{" "}
                           </span>
-                          {scriptText}
-                        </span>
+                          {bodyText}
+                        </ScriptLine>
                         {scriptNote && (
-                          <span className="cue-script-note">
+                          <ScriptLine
+                            className="cue-script-note"
+                            roleName={roleName}
+                          >
                             （{scriptNote}）
-                          </span>
+                          </ScriptLine>
                         )}
                       </span>
                       {cue.id === activeCueId && (
@@ -525,7 +570,7 @@ const Timeline = ({
                     </button>
                     <div className="cue-actions">
                       <IconButton
-                        label="この行を編集"
+                        label={`${fullText}を編集`}
                         onClick={() =>
                           setEditor({ mode: "edit", cueId: cue.id })
                         }
@@ -583,7 +628,7 @@ const Timeline = ({
                       </IconButton>
                     </div>
                     <CueActionMenu
-                      label={scriptText}
+                      label={fullText}
                       canMoveUp={index > 0}
                       canMoveDown={index < lane.cues.length - 1}
                       onEdit={() => setEditor({ mode: "edit", cueId: cue.id })}
