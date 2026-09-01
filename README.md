@@ -137,4 +137,8 @@ npm run build:stage-wasm-host
 - このリポジトリの自動テストは実機への書込み、サーボ動作、実スピーカー再生を実行しません。
 
 設計の背景とMVP条件は[`stack-chan-stage-overview-design.md`](stack-chan-stage-overview-design.md)を参照してください。
+
+## ライセンス
+
+本プロジェクトの独自コードは[Apache License 2.0](LICENSE)で公開しています。
 第三者成果物の出典とライセンスは[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)に記載しています。
